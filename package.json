@@ -35,5 +35,8 @@
   "bugs": {
     "url": "https://github.com/asial-matagawa/gitopo/issues"
   },
-  "homepage": "https://github.com/asial-matagawa/gitopo#readme"
+  "homepage": "https://github.com/asial-matagawa/gitopo#readme",
+  "dependencies": {
+    "electron": "^40.4.1"
+  }
 }
