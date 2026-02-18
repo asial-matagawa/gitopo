@@ -443,10 +443,8 @@ function renderGraph() {
     commit.parents.forEach((parentHash) => {
       const parentPos = positions.get(parentHash);
       if (parentPos) {
-        // Skip edges involving "Other" column
-        if (childPos.col === branchLineages.length || parentPos.col === branchLineages.length) {
-          return;
-        }
+        const isOtherEdge = childPos.col === branchLineages.length || parentPos.col === branchLineages.length;
+
         const x1 = childPos.x;
         const y1 = childPos.y;
         const x2 = parentPos.x;
@@ -470,9 +468,10 @@ function renderGraph() {
           .append('path')
           .attr('d', pathD)
           .attr('fill', 'none')
-          .attr('stroke', isSubBranchEdge ? '#555' : '#666')
-          .attr('stroke-width', childPos.isSubBranch && parentPos.isSubBranch ? 1 : 1.5)
-          .attr('stroke-opacity', 0.6)
+          .attr('stroke', isOtherEdge ? '#444' : (isSubBranchEdge ? '#555' : '#666'))
+          .attr('stroke-width', isOtherEdge ? 1 : (childPos.isSubBranch && parentPos.isSubBranch ? 1 : 1.5))
+          .attr('stroke-opacity', isOtherEdge ? 0.4 : 0.6)
+          .attr('stroke-dasharray', isOtherEdge ? '4,4' : 'none')
           .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge');
 
         // Add hover interaction for sub-branch edges
