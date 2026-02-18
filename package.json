@@ -7,6 +7,10 @@
     "gitopo": "./bin/gitopo.js"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron": "electron src/main/index.js",
+    "electron:dev": "NODE_ENV=development electron src/main/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -37,6 +41,8 @@
   },
   "homepage": "https://github.com/asial-matagawa/gitopo#readme",
   "dependencies": {
-    "electron": "^40.4.1"
+    "d3": "^7.9.0",
+    "electron": "^40.4.1",
+    "vite": "^7.3.1"
   }
 }

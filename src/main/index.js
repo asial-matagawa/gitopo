@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const isDev = process.env.NODE_ENV === 'development';
+
 let mainWindow;
 
 function createWindow() {
@@ -15,7 +17,12 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5273');
+    mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../../dist/renderer/index.html'));
+  }
 }
 
 // Handle git command execution from renderer
