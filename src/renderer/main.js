@@ -112,70 +112,102 @@ function getFirstParentLineage(branchName) {
   return lineage;
 }
 
-// Find sub-branches: commits that branch off from mainline and merge back
-function findSubBranches(lineage) {
+// Find sub-branches: commits that branch off from mainline
+// Includes both merged and unmerged branches that only depend on mainline
+// excludeCommits: commits that belong to other selected branches' lineages
+function findSubBranches(lineage, excludeCommits = new Set()) {
   const subBranches = [];
   const processedCommits = new Set();
 
-  // Find merge commits on the mainline
-  for (const hash of lineage) {
-    const commit = hashToCommit.get(hash);
-    if (!commit || commit.parents.length < 2) continue;
+  // Build child links (reverse of parent links)
+  const hashToChildren = new Map();
+  for (const commit of allCommits) {
+    for (const parentHash of commit.parents) {
+      if (!hashToChildren.has(parentHash)) {
+        hashToChildren.set(parentHash, []);
+      }
+      hashToChildren.get(parentHash).push(commit.hash);
+    }
+  }
 
-    // For each non-first parent (merged branches)
-    for (let i = 1; i < commit.parents.length; i++) {
-      const mergedParent = commit.parents[i];
-      if (processedCommits.has(mergedParent)) continue;
+  // Helper: collect connected commits (both parents and children) starting from a given hash
+  function collectConnectedCommits(startHash) {
+    const commits = new Set();
+    const toVisit = [startHash];
 
-      // Trace back the merged branch to find all its commits
-      const subBranchCommits = new Set();
-      const toVisit = [mergedParent];
+    while (toVisit.length > 0) {
+      const currentHash = toVisit.pop();
+      if (commits.has(currentHash)) continue;
+      if (lineage.has(currentHash)) continue;
+      if (excludeCommits.has(currentHash)) continue; // Skip commits from other lineages
+      if (processedCommits.has(currentHash)) continue;
 
-      while (toVisit.length > 0) {
-        const currentHash = toVisit.pop();
-        if (subBranchCommits.has(currentHash)) continue;
-        if (lineage.has(currentHash)) continue; // Stop at mainline
-        if (processedCommits.has(currentHash)) continue;
+      const current = hashToCommit.get(currentHash);
+      if (!current) continue;
 
-        const current = hashToCommit.get(currentHash);
-        if (!current) continue;
+      commits.add(currentHash);
 
-        subBranchCommits.add(currentHash);
-        processedCommits.add(currentHash);
-
-        // Follow all parents
-        for (const parentHash of current.parents) {
-          if (!lineage.has(parentHash) && !subBranchCommits.has(parentHash)) {
-            toVisit.push(parentHash);
-          }
+      // Follow all parents (excluding mainline and other lineages)
+      for (const parentHash of current.parents) {
+        if (!lineage.has(parentHash) && !excludeCommits.has(parentHash) && !commits.has(parentHash)) {
+          toVisit.push(parentHash);
         }
       }
 
-      if (subBranchCommits.size > 0) {
-        // Verify this sub-branch only depends on mainline or itself
-        let isValidSubBranch = true;
-        for (const sbHash of subBranchCommits) {
-          const sbCommit = hashToCommit.get(sbHash);
-          if (!sbCommit) continue;
-          for (const parentHash of sbCommit.parents) {
-            if (
-              !lineage.has(parentHash) &&
-              !subBranchCommits.has(parentHash)
-            ) {
-              isValidSubBranch = false;
-              break;
-            }
-          }
-          if (!isValidSubBranch) break;
-        }
-
-        if (isValidSubBranch) {
-          subBranches.push({
-            mergeCommit: hash,
-            commits: subBranchCommits,
-          });
+      // Follow all children (excluding mainline and other lineages)
+      const children = hashToChildren.get(currentHash) || [];
+      for (const childHash of children) {
+        if (!lineage.has(childHash) && !excludeCommits.has(childHash) && !commits.has(childHash)) {
+          toVisit.push(childHash);
         }
       }
+    }
+
+    return commits;
+  }
+
+  // Helper: check if a commit set only depends on mainline or itself
+  function isValidSubBranch(commitSet) {
+    for (const hash of commitSet) {
+      const commit = hashToCommit.get(hash);
+      if (!commit) continue;
+      for (const parentHash of commit.parents) {
+        if (!lineage.has(parentHash) && !commitSet.has(parentHash)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  // Helper: find merge commit on mainline for a sub-branch (if any)
+  function findMergeCommit(commitSet) {
+    for (const hash of lineage) {
+      const commit = hashToCommit.get(hash);
+      if (!commit || commit.parents.length < 2) continue;
+      for (let i = 1; i < commit.parents.length; i++) {
+        if (commitSet.has(commit.parents[i])) {
+          return hash;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Find all non-mainline commits and group them into connected components
+  for (const commit of allCommits) {
+    if (lineage.has(commit.hash)) continue;
+    if (excludeCommits.has(commit.hash)) continue;
+    if (processedCommits.has(commit.hash)) continue;
+
+    const subBranchCommits = collectConnectedCommits(commit.hash);
+
+    if (subBranchCommits.size > 0 && isValidSubBranch(subBranchCommits)) {
+      subBranchCommits.forEach((h) => processedCommits.add(h));
+      subBranches.push({
+        mergeCommit: findMergeCommit(subBranchCommits),
+        commits: subBranchCommits,
+      });
     }
   }
 
@@ -215,10 +247,29 @@ function renderGraph() {
 
   const selectedBranches = getSelectedBranches();
 
-  // Calculate lineage and sub-branches for each selected branch
-  const branchLineages = selectedBranches.map((name) => {
-    const lineage = getFirstParentLineage(name);
-    const subBranches = findSubBranches(lineage);
+  // First, calculate all lineages
+  const allLineages = selectedBranches.map((name) => ({
+    name,
+    lineage: getFirstParentLineage(name),
+  }));
+
+  // Build a set of all lineage commits (to exclude from sub-branch detection)
+  const allLineageCommits = new Set();
+  allLineages.forEach(({ lineage }) => {
+    lineage.forEach((hash) => allLineageCommits.add(hash));
+  });
+
+  // Calculate sub-branches for each selected branch, excluding other lineages
+  const branchLineages = allLineages.map(({ name, lineage }) => {
+    // Exclude commits from other lineages (not this one)
+    const otherLineageCommits = new Set();
+    allLineages.forEach((other) => {
+      if (other.name !== name) {
+        other.lineage.forEach((hash) => otherLineageCommits.add(hash));
+      }
+    });
+
+    const subBranches = findSubBranches(lineage, otherLineageCommits);
     return { name, lineage, subBranches };
   });
 
