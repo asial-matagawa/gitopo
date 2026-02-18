@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "description": "Topology-preserving Git commit graph visualizer to highlight key branches.",
   "main": "index.js",
+  "bin": {
+    "gitopo": "./bin/gitopo.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
