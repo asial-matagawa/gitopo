@@ -387,6 +387,10 @@ function renderGraph() {
     commit.parents.forEach((parentHash) => {
       const parentPos = positions.get(parentHash);
       if (parentPos) {
+        // Skip edges involving "Other" column
+        if (childPos.col === branchLineages.length || parentPos.col === branchLineages.length) {
+          return;
+        }
         const x1 = childPos.x;
         const y1 = childPos.y;
         const x2 = parentPos.x;
