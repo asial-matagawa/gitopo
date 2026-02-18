@@ -255,11 +255,14 @@ function renderGraph() {
   });
 
   // Assign sub-branch commits with collision detection
+  let subBranchIdCounter = 0;
   branchLineages.forEach((branch, branchIndex) => {
     // Track which rows have which sub-offsets used
     const rowOffsetUsage = new Map(); // row -> Set of used offsets
 
     branch.subBranches.forEach((subBranch) => {
+      const subBranchId = `sb-${subBranchIdCounter++}`;
+
       // Find rows occupied by this sub-branch
       const subBranchRows = [];
       subBranch.commits.forEach((hash) => {
@@ -299,6 +302,7 @@ function renderGraph() {
           mainCol: branchIndex,
           subOffset: offset,
           isSubBranch: true,
+          subBranchId: subBranchId,
         });
       });
     });
@@ -339,6 +343,7 @@ function renderGraph() {
       x: x,
       y: paddingTop + globalIndex * nodeSpacingY,
       isSubBranch: col.isSubBranch,
+      subBranchId: col.subBranchId || null,
     });
   });
 
@@ -406,13 +411,36 @@ function renderGraph() {
           pathD = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
         }
 
-        mainGroup
+        // Determine sub-branch ID for this edge
+        const edgeSubBranchId = childPos.subBranchId || parentPos.subBranchId || null;
+        const isSubBranchEdge = childPos.isSubBranch || parentPos.isSubBranch;
+
+        const path = mainGroup
           .append('path')
           .attr('d', pathD)
           .attr('fill', 'none')
-          .attr('stroke', childPos.isSubBranch || parentPos.isSubBranch ? '#555' : '#666')
+          .attr('stroke', isSubBranchEdge ? '#555' : '#666')
           .attr('stroke-width', childPos.isSubBranch && parentPos.isSubBranch ? 1 : 1.5)
-          .attr('stroke-opacity', 0.6);
+          .attr('stroke-opacity', 0.6)
+          .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge');
+
+        // Add hover interaction for sub-branch edges
+        if (edgeSubBranchId) {
+          path
+            .style('cursor', 'pointer')
+            .on('mouseenter', () => {
+              mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
+                .attr('stroke', '#4fc3f7')
+                .attr('stroke-width', 2.5)
+                .attr('stroke-opacity', 1);
+            })
+            .on('mouseleave', () => {
+              mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
+                .attr('stroke', '#555')
+                .attr('stroke-width', 1)
+                .attr('stroke-opacity', 0.6);
+            });
+        }
       }
     });
   });
