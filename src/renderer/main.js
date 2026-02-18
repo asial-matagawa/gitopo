@@ -387,12 +387,25 @@ function renderGraph() {
     commit.parents.forEach((parentHash) => {
       const parentPos = positions.get(parentHash);
       if (parentPos) {
+        const x1 = childPos.x;
+        const y1 = childPos.y;
+        const x2 = parentPos.x;
+        const y2 = parentPos.y;
+
+        let pathD;
+        if (x1 === x2) {
+          // Same column: straight line
+          pathD = `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+          // Different columns: sigmoid-style bezier curve
+          const midY = (y1 + y2) / 2;
+          pathD = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+        }
+
         mainGroup
-          .append('line')
-          .attr('x1', childPos.x)
-          .attr('y1', childPos.y)
-          .attr('x2', parentPos.x)
-          .attr('y2', parentPos.y)
+          .append('path')
+          .attr('d', pathD)
+          .attr('fill', 'none')
           .attr('stroke', childPos.isSubBranch || parentPos.isSubBranch ? '#555' : '#666')
           .attr('stroke-width', childPos.isSubBranch && parentPos.isSubBranch ? 1 : 1.5)
           .attr('stroke-opacity', 0.6);
