@@ -21,11 +21,21 @@ body {
 
 #controls {
   display: flex;
+  align-items: center;
   gap: 20px;
   padding: 12px 20px;
   background: #16213e;
   border-bottom: 1px solid #333;
   flex-shrink: 0;
+}
+
+#repo-name {
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  margin-right: 20px;
+  padding-right: 20px;
+  border-right: 1px solid #444;
 }
 
 .branch-selector {

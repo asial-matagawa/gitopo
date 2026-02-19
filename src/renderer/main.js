@@ -4,6 +4,16 @@ import './style.css';
 let allCommits = [];
 let allBranches = [];
 let hashToCommit = new Map();
+let repoName = '';
+
+async function fetchRepoName() {
+  const result = await window.gitopo.git.exec('rev-parse --show-toplevel');
+  if (result.success) {
+    const fullPath = result.output.trim();
+    return fullPath.split('/').pop() || fullPath;
+  }
+  return 'Unknown Repository';
+}
 
 async function fetchCommits() {
   const result = await window.gitopo.git.exec(
@@ -664,15 +674,20 @@ function renderGraph() {
 }
 
 async function init() {
-  [allCommits, allBranches] = await Promise.all([
+  [allCommits, allBranches, repoName] = await Promise.all([
     fetchCommits(),
     fetchBranches(),
+    fetchRepoName(),
   ]);
+
+  // Display repository name
+  document.getElementById('repo-name').textContent = repoName;
 
   // Build hash -> commit map
   hashToCommit.clear();
   allCommits.forEach((c) => hashToCommit.set(c.hash, c));
 
+  console.log('Repository:', repoName);
   console.log('Commits:', allCommits.length);
   console.log('Branches:', allBranches.length);
 
