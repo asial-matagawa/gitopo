@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('gitopo', {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
   },
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:version'),
+  },
 });

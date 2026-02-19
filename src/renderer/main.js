@@ -962,6 +962,12 @@ async function reloadCommits() {
 async function init() {
   const limit = getCommitLimit();
 
+  // Get and display version
+  const versionResult = await window.gitopo.app.getVersion();
+  if (versionResult.success) {
+    document.title = `gitopo ${versionResult.version}`;
+  }
+
   showLoading('Loading repository info...');
   repoName = await fetchRepoName();
 

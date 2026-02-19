@@ -5,12 +5,19 @@ const { execSync } = require('child_process');
 
 const isDev = process.env.NODE_ENV === 'development';
 
+// Get gitopo version from package.json
+const gitopoPackageJson = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')
+);
+const gitopoVersion = gitopoPackageJson.version;
+
 let mainWindow;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: `gitopo ${gitopoVersion}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -64,6 +71,11 @@ ipcMain.handle('config:get', async () => {
   } catch (error) {
     return { success: false, error: error.message, config: {} };
   }
+});
+
+// Handle version request
+ipcMain.handle('app:version', async () => {
+  return { success: true, version: gitopoVersion };
 });
 
 app.whenReady().then(createWindow);
