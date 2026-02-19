@@ -20,6 +20,27 @@ Or install globally:
 npm install -g gitopo
 ```
 
+## Configuration
+
+Add a `gitopo` key to your project's `package.json` to configure default branch selectors:
+
+```json
+{
+  "name": "your-project",
+  "gitopo": {
+    "keyBranches": ["origin/main", "origin/staging", "origin/production"]
+  }
+}
+```
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `keyBranches` | `string[]` | Default branches for the 3 branch selectors (in order) |
+
+If `keyBranches` is not specified, gitopo will default to `main` or `master` for the first selector.
+
 ## Development
 
 ```bash
