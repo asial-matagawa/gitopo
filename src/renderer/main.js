@@ -412,13 +412,16 @@ function renderGraph() {
     .attr('class', 'tooltip')
     .style('opacity', 0);
 
+  // Branch colors (standard 3 colors)
+  const branchColors = ['#4CAF50', '#2196F3', '#FF9800']; // Green, Blue, Orange
+
   // Draw column headers
   branchLineages.forEach((branch, index) => {
     mainGroup
       .append('text')
       .attr('x', columnStartX.get(index))
       .attr('y', 25)
-      .attr('fill', '#4fc3f7')
+      .attr('fill', branchColors[index] || '#888')
       .attr('font-size', '14px')
       .attr('font-weight', 'bold')
       .text(branch.name);
@@ -463,32 +466,50 @@ function renderGraph() {
         // Determine sub-branch ID for this edge
         const edgeSubBranchId = childPos.subBranchId || parentPos.subBranchId || null;
         const isSubBranchEdge = childPos.isSubBranch || parentPos.isSubBranch;
+        const isMainlineEdge = !isSubBranchEdge && !isOtherEdge && childPos.col < branchLineages.length;
+
+        // Determine edge color based on branch
+        let edgeColor = '#666';
+        if (isOtherEdge) {
+          edgeColor = '#444';
+        } else if (childPos.col < branchLineages.length) {
+          edgeColor = branchColors[childPos.col] || '#666';
+        }
+
+        // Determine stroke width
+        let strokeWidth = 1.5;
+        if (isOtherEdge) {
+          strokeWidth = 1;
+        } else if (isMainlineEdge) {
+          strokeWidth = 3; // Thicker for mainline
+        } else if (isSubBranchEdge) {
+          strokeWidth = 1.5;
+        }
 
         const path = mainGroup
           .append('path')
           .attr('d', pathD)
           .attr('fill', 'none')
-          .attr('stroke', isOtherEdge ? '#444' : (isSubBranchEdge ? '#555' : '#666'))
-          .attr('stroke-width', isOtherEdge ? 1 : (childPos.isSubBranch && parentPos.isSubBranch ? 1 : 1.5))
-          .attr('stroke-opacity', isOtherEdge ? 0.4 : 0.6)
+          .attr('stroke', edgeColor)
+          .attr('stroke-width', strokeWidth)
+          .attr('stroke-opacity', isOtherEdge ? 0.4 : (isSubBranchEdge ? 0.5 : 0.8))
           .attr('stroke-dasharray', isOtherEdge ? '4,4' : 'none')
           .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge');
 
-        // Add hover interaction for sub-branch edges
+        // Add hover interaction for sub-branch edges (thicken only, no color change)
         if (edgeSubBranchId) {
+          const originalWidth = strokeWidth;
           path
             .style('cursor', 'pointer')
             .on('mouseenter', () => {
               mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
-                .attr('stroke', '#4fc3f7')
-                .attr('stroke-width', 2.5)
-                .attr('stroke-opacity', 1);
+                .attr('stroke-width', 3)
+                .attr('stroke-opacity', 0.9);
             })
             .on('mouseleave', () => {
               mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
-                .attr('stroke', '#555')
-                .attr('stroke-width', 1)
-                .attr('stroke-opacity', 0.6);
+                .attr('stroke-width', originalWidth)
+                .attr('stroke-opacity', 0.5);
             });
         }
       }
@@ -517,13 +538,19 @@ function renderGraph() {
     })
     .attr('fill', (d) => {
       const pos = positions.get(d.hash);
-      if (pos.isSubBranch) return '#a0a0a0';
       if (pos.col < branchLineages.length) {
-        return hashToBranches.has(d.hash) ? '#4fc3f7' : '#fff';
+        return branchColors[pos.col] || '#fff';
       }
+      if (pos.isSubBranch) return '#a0a0a0';
       return '#888';
     })
-    .attr('stroke', '#333')
+    .attr('stroke', (d) => {
+      const pos = positions.get(d.hash);
+      if (pos.col < branchLineages.length) {
+        return branchColors[pos.col] || '#333';
+      }
+      return '#333';
+    })
     .attr('stroke-width', (d) => {
       const pos = positions.get(d.hash);
       if (pos.isSubBranch) return 1;
