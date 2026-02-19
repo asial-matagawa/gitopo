@@ -9,6 +9,18 @@ let repoName = '';
 let timeZoom = 1; // Time axis zoom factor
 let config = {}; // Config from package.json
 
+function showLoading(message) {
+  const loading = document.getElementById('loading');
+  const status = document.getElementById('loading-status');
+  loading.classList.remove('hidden');
+  status.textContent = message;
+}
+
+function hideLoading() {
+  const loading = document.getElementById('loading');
+  loading.classList.add('hidden');
+}
+
 async function fetchRepoName() {
   const result = await window.gitopo.git.exec('rev-parse --show-toplevel');
   if (result.success) {
@@ -932,6 +944,7 @@ function renderGraph() {
 }
 
 async function reloadCommits() {
+  showLoading('Loading commits...');
   const limit = getCommitLimit();
   allCommits = await fetchCommits(limit);
 
@@ -940,18 +953,29 @@ async function reloadCommits() {
   allCommits.forEach((c) => hashToCommit.set(c.hash, c));
 
   console.log('Commits reloaded:', allCommits.length);
+
+  showLoading('Rendering graph...');
   renderGraph();
+  hideLoading();
 }
 
 async function init() {
   const limit = getCommitLimit();
-  [allCommits, allBranches, repoName, allPullRequests, config] = await Promise.all([
-    fetchCommits(limit),
-    fetchBranches(),
-    fetchRepoName(),
-    fetchPullRequests(),
-    fetchConfig(),
-  ]);
+
+  showLoading('Loading repository info...');
+  repoName = await fetchRepoName();
+
+  showLoading('Loading configuration...');
+  config = await fetchConfig();
+
+  showLoading('Loading commits...');
+  allCommits = await fetchCommits(limit);
+
+  showLoading('Loading branches...');
+  allBranches = await fetchBranches();
+
+  showLoading('Loading pull requests...');
+  allPullRequests = await fetchPullRequests();
 
   // Display repository name
   document.getElementById('repo-name').textContent = repoName;
@@ -967,7 +991,11 @@ async function init() {
   console.log('Config:', config);
 
   populateBranchSelectors(allBranches);
+
+  showLoading('Rendering graph...');
   renderGraph();
+
+  hideLoading();
 
   window.addEventListener('resize', () => {
     renderGraph();
