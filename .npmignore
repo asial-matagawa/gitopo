@@ -1,0 +1,21 @@
+# Development files
+.claude/
+CLAUDE.md
+vite.config.js
+src/renderer/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+coverage/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Package manager
+package-lock.json
+node_modules/

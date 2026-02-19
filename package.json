@@ -2,16 +2,25 @@
   "name": "gitopo",
   "version": "0.0.1",
   "description": "Topology-preserving Git commit graph visualizer to highlight key branches.",
-  "main": "index.js",
   "bin": {
     "gitopo": "./bin/gitopo.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "src/main/",
+    "docs/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
   },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "electron": "electron src/main/index.js",
     "electron:dev": "NODE_ENV=development electron src/main/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
