@@ -33,6 +33,17 @@ Or install globally:
 npm install -g gitopo
 ```
 
+### Troubleshooting
+
+If you encounter "Electron failed to install correctly" error, run:
+
+```bash
+cd $(npm root -g)/gitopo
+node node_modules/electron/install.js
+```
+
+This is a [known Electron issue](https://github.com/electron/electron/issues/20731).
+
 ## Usage
 
 Run in any Git repository:
