@@ -51,9 +51,18 @@ async function fetchPullRequests() {
   }
 }
 
-async function fetchCommits() {
+function getCommitLimit() {
+  const input = document.getElementById('commit-limit');
+  const value = parseInt(input.value, 10);
+  if (isNaN(value) || value < 1 || value > 100000000) {
+    return 1000; // Default fallback
+  }
+  return value;
+}
+
+async function fetchCommits(limit = 1000) {
   const result = await window.gitopo.git.exec(
-    'log --all --format="%H|%P|%ct|%s" --date-order -1000'
+    `log --all --format="%H|%P|%ct|%s" --date-order -${limit}`
   );
 
   if (!result.success) {
@@ -922,9 +931,22 @@ function renderGraph() {
   });
 }
 
+async function reloadCommits() {
+  const limit = getCommitLimit();
+  allCommits = await fetchCommits(limit);
+
+  // Rebuild hash -> commit map
+  hashToCommit.clear();
+  allCommits.forEach((c) => hashToCommit.set(c.hash, c));
+
+  console.log('Commits reloaded:', allCommits.length);
+  renderGraph();
+}
+
 async function init() {
+  const limit = getCommitLimit();
   [allCommits, allBranches, repoName, allPullRequests, config] = await Promise.all([
-    fetchCommits(),
+    fetchCommits(limit),
     fetchBranches(),
     fetchRepoName(),
     fetchPullRequests(),
@@ -949,6 +971,16 @@ async function init() {
 
   window.addEventListener('resize', () => {
     renderGraph();
+  });
+
+  // Commit limit input handler with validation
+  const commitLimitInput = document.getElementById('commit-limit');
+  commitLimitInput.addEventListener('change', () => {
+    const value = parseInt(commitLimitInput.value, 10);
+    if (isNaN(value) || value < 1 || value > 100000000) {
+      commitLimitInput.value = 1000; // Reset to default
+    }
+    reloadCommits();
   });
 }
 
