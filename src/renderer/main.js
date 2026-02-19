@@ -460,6 +460,9 @@ function renderGraph() {
   // Create main group for zoom/pan
   const mainGroup = svg.append('g').attr('class', 'main-group');
 
+  // Create header group (follows panX only, not panY or timeZoom)
+  const headerGroup = svg.append('g').attr('class', 'header-group');
+
   // Create tooltip
   const tooltip = container
     .append('div')
@@ -469,12 +472,16 @@ function renderGraph() {
   // Branch colors (standard 3 colors)
   const branchColors = ['#4CAF50', '#2196F3', '#FF9800']; // Green, Blue, Orange
 
-  // Draw column headers
+  // Header Y position (fixed)
+  const headerY = 20;
+
+  // Draw column headers (in headerGroup, centered on column)
   branchLineages.forEach((branch, index) => {
-    mainGroup
+    headerGroup
       .append('text')
       .attr('x', columnStartX.get(index))
-      .attr('y', 25)
+      .attr('y', headerY)
+      .attr('text-anchor', 'middle')
       .attr('fill', branchColors[index] || '#888')
       .attr('font-size', '14px')
       .attr('font-weight', 'bold')
@@ -483,10 +490,11 @@ function renderGraph() {
 
   // "Other" column header
   if (hasOtherCommits) {
-    mainGroup
+    headerGroup
       .append('text')
       .attr('x', columnStartX.get(branchLineages.length))
-      .attr('y', 25)
+      .attr('y', headerY)
+      .attr('text-anchor', 'middle')
       .attr('fill', '#888')
       .attr('font-size', '14px')
       .text('Other');
@@ -769,6 +777,8 @@ function renderGraph() {
 
   function updateTransform() {
     mainGroup.attr('transform', `translate(${panX}, ${panY})`);
+    // Header follows horizontal pan only
+    headerGroup.attr('transform', `translate(${panX}, 0)`);
   }
 
   // Update node and edge positions based on timeZoom
