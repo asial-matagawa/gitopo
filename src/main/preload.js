@@ -4,4 +4,7 @@ contextBridge.exposeInMainWorld('gitopo', {
   git: {
     exec: (args) => ipcRenderer.invoke('git:exec', args),
   },
+  gh: {
+    exec: (args) => ipcRenderer.invoke('gh:exec', args),
+  },
 });

@@ -38,6 +38,19 @@ ipcMain.handle('git:exec', async (event, args) => {
   }
 });
 
+// Handle gh command execution from renderer
+ipcMain.handle('gh:exec', async (event, args) => {
+  try {
+    const result = execSync(`gh ${args}`, {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    });
+    return { success: true, output: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

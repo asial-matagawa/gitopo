@@ -3,6 +3,7 @@ import './style.css';
 
 let allCommits = [];
 let allBranches = [];
+let allPullRequests = [];
 let hashToCommit = new Map();
 let repoName = '';
 
@@ -13,6 +14,30 @@ async function fetchRepoName() {
     return fullPath.split('/').pop() || fullPath;
   }
   return 'Unknown Repository';
+}
+
+async function fetchPullRequests() {
+  const result = await window.gitopo.gh.exec(
+    'pr list --state open --json number,title,headRefName,headRefOid'
+  );
+
+  if (!result.success) {
+    console.error('Failed to fetch pull requests:', result.error);
+    return [];
+  }
+
+  try {
+    const prs = JSON.parse(result.output);
+    return prs.map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      branch: pr.headRefName,
+      headCommit: pr.headRefOid,
+    }));
+  } catch (e) {
+    console.error('Failed to parse PR data:', e);
+    return [];
+  }
 }
 
 async function fetchCommits() {
@@ -526,6 +551,12 @@ function renderGraph() {
     });
   });
 
+  // Build PR map (headCommit -> PR info)
+  const hashToPR = new Map();
+  allPullRequests.forEach((pr) => {
+    hashToPR.set(pr.headCommit, pr);
+  });
+
   // Draw nodes
   const nodes = mainGroup
     .selectAll('g.node')
@@ -537,6 +568,16 @@ function renderGraph() {
       const pos = positions.get(d.hash);
       return pos ? `translate(${pos.x}, ${pos.y})` : 'translate(-100, -100)';
     });
+
+  // Draw PR highlight circle (behind the main node)
+  nodes
+    .filter((d) => hashToPR.has(d.hash))
+    .append('circle')
+    .attr('r', nodeRadius + 6)
+    .attr('fill', 'none')
+    .attr('stroke', '#888')
+    .attr('stroke-width', 2)
+    .attr('stroke-dasharray', '3,2');
 
   nodes
     .append('circle')
@@ -570,12 +611,14 @@ function renderGraph() {
     .on('mouseenter', (event, d) => {
       const branchNames = hashToBranches.get(d.hash);
       const branchInfo = branchNames ? `[${branchNames.join(', ')}]<br/>` : '';
+      const pr = hashToPR.get(d.hash);
+      const prInfo = pr ? `<span class="pr-info">PR #${pr.number}: ${pr.title}</span><br/>` : '';
       const date = new Date(d.timestamp * 1000).toLocaleString();
 
       tooltip
         .html(
           `<strong>${d.hash.substring(0, 7)}</strong><br/>` +
-            `${branchInfo}${d.message}<br/>` +
+            `${prInfo}${branchInfo}${d.message}<br/>` +
             `<span class="date">${date}</span>`
         )
         .style('left', event.pageX + 15 + 'px')
@@ -589,6 +632,19 @@ function renderGraph() {
     })
     .on('mouseleave', () => {
       tooltip.style('opacity', 0);
+    });
+
+  // Draw PR labels next to nodes
+  nodes
+    .filter((d) => hashToPR.has(d.hash))
+    .append('text')
+    .attr('x', nodeRadius + 10)
+    .attr('y', 4)
+    .attr('fill', '#ccc')
+    .attr('font-size', '11px')
+    .text((d) => {
+      const pr = hashToPR.get(d.hash);
+      return `PR #${pr.number}: ${pr.title.substring(0, 30)}${pr.title.length > 30 ? '...' : ''}`;
     });
 
   // Pan (scroll) behavior - no zoom
@@ -674,10 +730,11 @@ function renderGraph() {
 }
 
 async function init() {
-  [allCommits, allBranches, repoName] = await Promise.all([
+  [allCommits, allBranches, repoName, allPullRequests] = await Promise.all([
     fetchCommits(),
     fetchBranches(),
     fetchRepoName(),
+    fetchPullRequests(),
   ]);
 
   // Display repository name
@@ -690,6 +747,7 @@ async function init() {
   console.log('Repository:', repoName);
   console.log('Commits:', allCommits.length);
   console.log('Branches:', allBranches.length);
+  console.log('Open PRs:', allPullRequests.length);
 
   populateBranchSelectors(allBranches);
   renderGraph();
