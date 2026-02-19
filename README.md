@@ -8,6 +8,8 @@ gitopo visualizes Git commit history with special treatment for mainline branche
 
 Built with Electron, Vite, and D3.js.
 
+![gitopo screenshot](docs/screenshot.png)
+
 ## Features
 
 - **Key Branch Columns**: Up to 3 main branches displayed in dedicated columns with distinct colors
