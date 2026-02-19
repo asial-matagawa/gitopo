@@ -6,6 +6,8 @@ let allBranches = [];
 let allPullRequests = [];
 let hashToCommit = new Map();
 let repoName = '';
+let timeZoom = 1; // Time axis zoom factor
+let config = {}; // Config from package.json
 
 async function fetchRepoName() {
   const result = await window.gitopo.git.exec('rev-parse --show-toplevel');
@@ -14,6 +16,15 @@ async function fetchRepoName() {
     return fullPath.split('/').pop() || fullPath;
   }
   return 'Unknown Repository';
+}
+
+async function fetchConfig() {
+  const result = await window.gitopo.config.get();
+  if (result.success) {
+    return result.config;
+  }
+  console.error('Failed to fetch config:', result.error);
+  return {};
 }
 
 async function fetchPullRequests() {
@@ -96,6 +107,9 @@ async function fetchBranches() {
 
 function populateBranchSelectors(branches) {
   const selectors = ['branch1', 'branch2', 'branch3'];
+  const keyBranches = config.keyBranches || [];
+
+  // Fallback to main/master if no keyBranches configured
   const defaultBranch = branches.find(
     (b) => b.name === 'main' || b.name === 'master'
   );
@@ -118,8 +132,13 @@ function populateBranchSelectors(branches) {
       select.appendChild(option);
     });
 
-    // Set default for first selector
-    if (index === 0 && defaultBranch) {
+    // Set default from keyBranches config, fallback to main/master for first selector
+    if (keyBranches[index]) {
+      const configuredBranch = branches.find((b) => b.name === keyBranches[index]);
+      if (configuredBranch) {
+        select.value = configuredBranch.name;
+      }
+    } else if (index === 0 && defaultBranch) {
       select.value = defaultBranch.name;
     }
 
@@ -484,9 +503,9 @@ function renderGraph() {
         const isOtherEdge = childPos.col === branchLineages.length || parentPos.col === branchLineages.length;
 
         const x1 = childPos.x;
-        const y1 = childPos.y;
+        const y1 = childPos.y * timeZoom;
         const x2 = parentPos.x;
-        const y2 = parentPos.y;
+        const y2 = parentPos.y * timeZoom;
 
         let pathD;
         if (x1 === x2) {
@@ -529,7 +548,9 @@ function renderGraph() {
           .attr('stroke-width', strokeWidth)
           .attr('stroke-opacity', isOtherEdge ? 0.4 : (isSubBranchEdge ? 0.5 : 0.8))
           .attr('stroke-dasharray', isOtherEdge ? '4,4' : 'none')
-          .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge');
+          .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge')
+          .attr('data-source', commit.hash)
+          .attr('data-target', parentHash);
 
         // Add hover interaction for sub-branch edges (thicken only, no color change)
         if (edgeSubBranchId) {
@@ -566,7 +587,7 @@ function renderGraph() {
     .attr('class', 'node')
     .attr('transform', (d) => {
       const pos = positions.get(d.hash);
-      return pos ? `translate(${pos.x}, ${pos.y})` : 'translate(-100, -100)';
+      return pos ? `translate(${pos.x}, ${pos.y * timeZoom})` : 'translate(-100, -100)';
     });
 
   // Draw PR highlight circle (behind the main node)
@@ -647,7 +668,7 @@ function renderGraph() {
       return `PR #${pr.number}: ${pr.title.substring(0, 30)}${pr.title.length > 30 ? '...' : ''}`;
     });
 
-  // Pan (scroll) behavior - no zoom
+  // Pan and zoom behavior
   let panX = 0;
   let panY = 0;
   let isDragging = false;
@@ -656,16 +677,76 @@ function renderGraph() {
   let panStartX = 0;
   let panStartY = 0;
 
+  // Helper to get zoomed Y position
+  function getZoomedY(baseY) {
+    return baseY * timeZoom;
+  }
+
   function updateTransform() {
     mainGroup.attr('transform', `translate(${panX}, ${panY})`);
   }
 
-  // Mouse wheel scrolling
+  // Update node and edge positions based on timeZoom
+  function updatePositions() {
+    // Update node positions
+    mainGroup.selectAll('g.node').attr('transform', (d) => {
+      const pos = hashToPosition.get(d.hash);
+      return pos ? `translate(${pos.x}, ${getZoomedY(pos.y)})` : 'translate(-100, -100)';
+    });
+
+    // Update edge paths
+    mainGroup.selectAll('path.edge').attr('d', function () {
+      const edge = d3.select(this);
+      const sourceHash = edge.attr('data-source');
+      const targetHash = edge.attr('data-target');
+      const sourcePos = hashToPosition.get(sourceHash);
+      const targetPos = hashToPosition.get(targetHash);
+
+      if (!sourcePos || !targetPos) return '';
+
+      const x1 = sourcePos.x;
+      const y1 = getZoomedY(sourcePos.y);
+      const x2 = targetPos.x;
+      const y2 = getZoomedY(targetPos.y);
+
+      if (x1 === x2) {
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+      } else {
+        const midY = (y1 + y2) / 2;
+        return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+      }
+    });
+  }
+
+  // Mouse wheel scrolling and zooming
   svg.on('wheel', (event) => {
     event.preventDefault();
-    panX -= event.deltaX;
-    panY -= event.deltaY;
-    updateTransform();
+
+    if (event.ctrlKey) {
+      // Ctrl + scroll: vertical zoom (time axis)
+      const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+      const minZoom = 0.1;
+      const maxZoom = 5;
+
+      const newTimeZoom = Math.max(minZoom, Math.min(maxZoom, timeZoom * zoomFactor));
+
+      // Zoom centered on mouse Y position
+      const rect = svg.node().getBoundingClientRect();
+      const mouseY = event.clientY - rect.top;
+
+      // Adjust panY to keep mouse position stable
+      const graphY = mouseY - panY;
+      panY = mouseY - graphY * (newTimeZoom / timeZoom);
+      timeZoom = newTimeZoom;
+
+      updatePositions();
+      updateTransform();
+    } else {
+      // Normal scroll: pan
+      panX -= event.deltaX;
+      panY -= event.deltaY;
+      updateTransform();
+    }
   });
 
   // Left-button drag scrolling
@@ -730,11 +811,12 @@ function renderGraph() {
 }
 
 async function init() {
-  [allCommits, allBranches, repoName, allPullRequests] = await Promise.all([
+  [allCommits, allBranches, repoName, allPullRequests, config] = await Promise.all([
     fetchCommits(),
     fetchBranches(),
     fetchRepoName(),
     fetchPullRequests(),
+    fetchConfig(),
   ]);
 
   // Display repository name
@@ -748,6 +830,7 @@ async function init() {
   console.log('Commits:', allCommits.length);
   console.log('Branches:', allBranches.length);
   console.log('Open PRs:', allPullRequests.length);
+  console.log('Config:', config);
 
   populateBranchSelectors(allBranches);
   renderGraph();

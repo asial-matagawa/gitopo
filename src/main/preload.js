@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld('gitopo', {
   gh: {
     exec: (args) => ipcRenderer.invoke('gh:exec', args),
   },
+  config: {
+    get: () => ipcRenderer.invoke('config:get'),
+  },
 });
