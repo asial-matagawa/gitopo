@@ -492,6 +492,69 @@ function renderGraph() {
       .text('Other');
   }
 
+  // Build child links map (parent -> children)
+  const hashToChildren = new Map();
+  allCommits.forEach((commit) => {
+    commit.parents.forEach((parentHash) => {
+      if (!hashToChildren.has(parentHash)) {
+        hashToChildren.set(parentHash, []);
+      }
+      hashToChildren.get(parentHash).push(commit.hash);
+    });
+  });
+
+  // Build set of key branch lineage commits
+  const keyBranchCommits = new Set();
+  branchLineages.forEach((branch) => {
+    branch.lineage.forEach((hash) => keyBranchCommits.add(hash));
+  });
+
+  // Function to find edges connecting an Other commit to key branches
+  function findConnectingEdges(startHash) {
+    const edges = [];
+    const visited = new Set();
+
+    // Traverse parents (upward)
+    function traverseParents(hash) {
+      if (visited.has(hash)) return;
+      visited.add(hash);
+
+      const commit = hashToCommit.get(hash);
+      if (!commit) return;
+
+      commit.parents.forEach((parentHash) => {
+        edges.push({ source: hash, target: parentHash });
+        const parentPos = positions.get(parentHash);
+        // Continue if parent is also in Other column
+        if (parentPos && parentPos.col === branchLineages.length && !parentPos.isSubBranch) {
+          traverseParents(parentHash);
+        }
+      });
+    }
+
+    // Traverse children (downward)
+    function traverseChildren(hash) {
+      if (visited.has(hash)) return;
+      visited.add(hash);
+
+      const children = hashToChildren.get(hash) || [];
+      children.forEach((childHash) => {
+        edges.push({ source: childHash, target: hash });
+        const childPos = positions.get(childHash);
+        // Continue if child is also in Other column
+        if (childPos && childPos.col === branchLineages.length && !childPos.isSubBranch) {
+          traverseChildren(childHash);
+        }
+      });
+    }
+
+    traverseParents(startHash);
+    visited.delete(startHash); // Allow traversing children from start
+    traverseChildren(startHash);
+
+    return edges;
+  }
+
   // Draw edges
   allCommits.forEach((commit) => {
     const childPos = positions.get(commit.hash);
@@ -645,14 +708,36 @@ function renderGraph() {
         .style('left', event.pageX + 15 + 'px')
         .style('top', event.pageY - 10 + 'px')
         .style('opacity', 1);
+
+      // Highlight connecting edges for Other column commits (not in sub-branches)
+      const pos = positions.get(d.hash);
+      if (pos && pos.col === branchLineages.length && !pos.isSubBranch) {
+        const connectingEdges = findConnectingEdges(d.hash);
+        connectingEdges.forEach(({ source, target }) => {
+          mainGroup.selectAll(`path.edge[data-source="${source}"][data-target="${target}"]`)
+            .attr('stroke-width', 3)
+            .attr('stroke-opacity', 0.9);
+        });
+      }
     })
     .on('mousemove', (event) => {
       tooltip
         .style('left', event.pageX + 15 + 'px')
         .style('top', event.pageY - 10 + 'px');
     })
-    .on('mouseleave', () => {
+    .on('mouseleave', (event, d) => {
       tooltip.style('opacity', 0);
+
+      // Reset edge highlighting for Other column commits
+      const pos = positions.get(d.hash);
+      if (pos && pos.col === branchLineages.length && !pos.isSubBranch) {
+        const connectingEdges = findConnectingEdges(d.hash);
+        connectingEdges.forEach(({ source, target }) => {
+          mainGroup.selectAll(`path.edge[data-source="${source}"][data-target="${target}"]`)
+            .attr('stroke-width', 1)
+            .attr('stroke-opacity', 0.4);
+        });
+      }
     });
 
   // Draw PR labels next to nodes
@@ -690,7 +775,7 @@ function renderGraph() {
   function updatePositions() {
     // Update node positions
     mainGroup.selectAll('g.node').attr('transform', (d) => {
-      const pos = hashToPosition.get(d.hash);
+      const pos = positions.get(d.hash);
       return pos ? `translate(${pos.x}, ${getZoomedY(pos.y)})` : 'translate(-100, -100)';
     });
 
@@ -699,8 +784,8 @@ function renderGraph() {
       const edge = d3.select(this);
       const sourceHash = edge.attr('data-source');
       const targetHash = edge.attr('data-target');
-      const sourcePos = hashToPosition.get(sourceHash);
-      const targetPos = hashToPosition.get(targetHash);
+      const sourcePos = positions.get(sourceHash);
+      const targetPos = positions.get(targetHash);
 
       if (!sourcePos || !targetPos) return '';
 
@@ -722,8 +807,8 @@ function renderGraph() {
   svg.on('wheel', (event) => {
     event.preventDefault();
 
-    if (event.ctrlKey) {
-      // Ctrl + scroll: vertical zoom (time axis)
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl/Cmd + scroll: vertical zoom (time axis)
       const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
       const minZoom = 0.1;
       const maxZoom = 5;
