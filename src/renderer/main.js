@@ -365,7 +365,24 @@ function renderGraph() {
     // Track which rows have which sub-offsets used
     const rowOffsetUsage = new Map(); // row -> Set of used offsets
 
-    branch.subBranches.forEach((subBranch) => {
+    // Sort sub-branches by their branch point (oldest commit timestamp)
+    // Earlier branched sub-branches get lower offsets (displayed on the left)
+    const sortedSubBranches = [...branch.subBranches].sort((a, b) => {
+      // The branch point is the commit closest to the mainline (oldest in sub-branch)
+      const getOldestTimestamp = (subBranch) => {
+        let oldest = Infinity;
+        subBranch.commits.forEach((hash) => {
+          const commit = hashToCommit.get(hash);
+          if (commit && commit.timestamp < oldest) {
+            oldest = commit.timestamp;
+          }
+        });
+        return oldest;
+      };
+      return getOldestTimestamp(a) - getOldestTimestamp(b);
+    });
+
+    sortedSubBranches.forEach((subBranch) => {
       const subBranchId = `sb-${subBranchIdCounter++}`;
 
       // Find rows occupied by this sub-branch
@@ -377,7 +394,7 @@ function renderGraph() {
         }
       });
 
-      // Find minimum offset that doesn't collide
+      // Find minimum offset that doesn't collide with existing sub-branches
       let offset = 1;
       let hasCollision = true;
 
