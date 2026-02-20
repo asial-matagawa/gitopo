@@ -116,6 +116,26 @@ npm run build
 npx gitopo
 ```
 
+### Testing with npm link
+
+To test the development version in a project that has gitopo as a dependency:
+
+```bash
+# In this directory
+npm link
+
+# In the target project
+npm link gitopo
+```
+
+To restore the original version:
+
+```bash
+# In the target project
+npm unlink gitopo
+npm install
+```
+
 ## License
 
 MIT
