@@ -62,11 +62,13 @@ The application launches in the background. Close the window to exit.
 | Scroll | Pan the graph |
 | Drag | Pan the graph |
 | Ctrl/Cmd + Scroll | Zoom time axis |
+| Ctrl/Cmd + R | Fetch from remotes and refresh |
 | Hover on commit | Show commit details tooltip |
 | Hover on Other commit | Highlight connecting edges to key branches |
 
 ### UI Elements
 
+- **Refresh Button**: Fetch from remotes and reload the graph
 - **Branch Selectors (1-3)**: Choose which branches to display as key columns
 - **Commits Input**: Set the maximum number of commits to load
 - **Column Headers**: Branch names displayed at the top (follows horizontal scroll)

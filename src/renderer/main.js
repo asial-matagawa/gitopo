@@ -188,9 +188,12 @@ function getFirstParentLineage(branchName) {
 }
 
 // Find sub-branches: commits that branch off from mainline
-// Includes both merged and unmerged branches that only depend on mainline
+// A sub-branch belongs to key branch A if:
+// - Its last commit is merged into A, OR
+// - Its last commit is not merged into any key branch (unmerged)
 // excludeCommits: commits that belong to other selected branches' lineages
-function findSubBranches(lineage, excludeCommits = new Set()) {
+// allKeyBranchLineages: array of all key branch lineages for checking merges
+function findSubBranches(lineage, excludeCommits = new Set(), allKeyBranchLineages = []) {
   const subBranches = [];
   const processedCommits = new Set();
 
@@ -214,7 +217,7 @@ function findSubBranches(lineage, excludeCommits = new Set()) {
       const currentHash = toVisit.pop();
       if (commits.has(currentHash)) continue;
       if (lineage.has(currentHash)) continue;
-      if (excludeCommits.has(currentHash)) continue; // Skip commits from other lineages
+      if (excludeCommits.has(currentHash)) continue;
       if (processedCommits.has(currentHash)) continue;
 
       const current = hashToCommit.get(currentHash);
@@ -255,14 +258,28 @@ function findSubBranches(lineage, excludeCommits = new Set()) {
     return true;
   }
 
-  // Helper: find merge commit on mainline for a sub-branch (if any)
-  function findMergeCommit(commitSet) {
-    for (const hash of lineage) {
+  // Helper: find merge commit on a specific lineage for a sub-branch (if any)
+  function findMergeCommitOnLineage(commitSet, targetLineage) {
+    for (const hash of targetLineage) {
       const commit = hashToCommit.get(hash);
       if (!commit || commit.parents.length < 2) continue;
       for (let i = 1; i < commit.parents.length; i++) {
         if (commitSet.has(commit.parents[i])) {
           return hash;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Helper: find branch point (the commit on lineage where sub-branch forks from)
+  function findBranchPoint(commitSet) {
+    for (const hash of commitSet) {
+      const commit = hashToCommit.get(hash);
+      if (!commit) continue;
+      for (const parentHash of commit.parents) {
+        if (lineage.has(parentHash)) {
+          return parentHash;
         }
       }
     }
@@ -278,11 +295,30 @@ function findSubBranches(lineage, excludeCommits = new Set()) {
     const subBranchCommits = collectConnectedCommits(commit.hash);
 
     if (subBranchCommits.size > 0 && isValidSubBranch(subBranchCommits)) {
-      subBranchCommits.forEach((h) => processedCommits.add(h));
-      subBranches.push({
-        mergeCommit: findMergeCommit(subBranchCommits),
-        commits: subBranchCommits,
-      });
+      // Check where this sub-branch is merged
+      const mergeOnThisLineage = findMergeCommitOnLineage(subBranchCommits, lineage);
+
+      // Check if merged into any other key branch
+      let mergedIntoOtherKeyBranch = false;
+      for (const otherLineage of allKeyBranchLineages) {
+        if (otherLineage === lineage) continue;
+        if (findMergeCommitOnLineage(subBranchCommits, otherLineage)) {
+          mergedIntoOtherKeyBranch = true;
+          break;
+        }
+      }
+
+      // Include this sub-branch if:
+      // - It's merged into this lineage, OR
+      // - It's not merged into any key branch (unmerged)
+      if (mergeOnThisLineage || !mergedIntoOtherKeyBranch) {
+        subBranchCommits.forEach((h) => processedCommits.add(h));
+        subBranches.push({
+          mergeCommit: mergeOnThisLineage,
+          branchPoint: findBranchPoint(subBranchCommits),
+          commits: subBranchCommits,
+        });
+      }
     }
   }
 
@@ -334,6 +370,9 @@ function renderGraph() {
     lineage.forEach((hash) => allLineageCommits.add(hash));
   });
 
+  // Collect all lineages for sub-branch merge detection
+  const allLineageSets = allLineages.map(({ lineage }) => lineage);
+
   // Calculate sub-branches for each selected branch, excluding other lineages
   const branchLineages = allLineages.map(({ name, lineage }) => {
     // Exclude commits from other lineages (not this one)
@@ -344,7 +383,7 @@ function renderGraph() {
       }
     });
 
-    const subBranches = findSubBranches(lineage, otherLineageCommits);
+    const subBranches = findSubBranches(lineage, otherLineageCommits, allLineageSets);
     return { name, lineage, subBranches };
   });
 
@@ -381,47 +420,70 @@ function renderGraph() {
   });
 
   // Assign sub-branch commits with collision detection
+  // Use span from branch point (inclusive) to merge commit or last commit (inclusive)
   let subBranchIdCounter = 0;
   branchLineages.forEach((branch, branchIndex) => {
     // Track which rows have which sub-offsets used
     const rowOffsetUsage = new Map(); // row -> Set of used offsets
 
-    // Sort sub-branches by their branch point (oldest commit timestamp)
-    // Earlier branched sub-branches get lower offsets (displayed on the left)
-    const sortedSubBranches = [...branch.subBranches].sort((a, b) => {
-      // The branch point is the commit closest to the mainline (oldest in sub-branch)
-      const getOldestTimestamp = (subBranch) => {
-        let oldest = Infinity;
+    // Calculate span for each sub-branch
+    const subBranchesWithSpan = branch.subBranches.map((subBranch) => {
+      // Find start row (branch point on mainline)
+      let startRow = -1;
+      if (subBranch.branchPoint) {
+        startRow = allCommits.findIndex((c) => c.hash === subBranch.branchPoint);
+      }
+      // Fallback: use oldest commit in sub-branch
+      if (startRow < 0) {
+        let oldestTimestamp = -Infinity;
         subBranch.commits.forEach((hash) => {
           const commit = hashToCommit.get(hash);
-          if (commit && commit.timestamp < oldest) {
-            oldest = commit.timestamp;
+          if (commit && commit.timestamp > oldestTimestamp) {
+            oldestTimestamp = commit.timestamp;
+            startRow = allCommits.findIndex((c) => c.hash === hash);
           }
         });
-        return oldest;
-      };
-      return getOldestTimestamp(a) - getOldestTimestamp(b);
+      }
+
+      // Find end row (merge commit on mainline, or newest commit in sub-branch if unmerged)
+      let endRow = -1;
+      if (subBranch.mergeCommit) {
+        endRow = allCommits.findIndex((c) => c.hash === subBranch.mergeCommit);
+      } else {
+        // Unmerged: use newest commit (highest timestamp = lowest row index)
+        let newestTimestamp = Infinity;
+        subBranch.commits.forEach((hash) => {
+          const commit = hashToCommit.get(hash);
+          if (commit && commit.timestamp < newestTimestamp) {
+            newestTimestamp = commit.timestamp;
+            endRow = allCommits.findIndex((c) => c.hash === hash);
+          }
+        });
+      }
+
+      return { ...subBranch, startRow, endRow };
+    });
+
+    // Sort sub-branches by their branch point timestamp (older first = higher row index first)
+    const sortedSubBranches = [...subBranchesWithSpan].sort((a, b) => {
+      return b.startRow - a.startRow; // Higher row index (older) first
     });
 
     sortedSubBranches.forEach((subBranch) => {
       const subBranchId = `sb-${subBranchIdCounter++}`;
 
-      // Find rows occupied by this sub-branch
-      const subBranchRows = [];
-      subBranch.commits.forEach((hash) => {
-        const globalIndex = allCommits.findIndex((c) => c.hash === hash);
-        if (globalIndex >= 0) {
-          subBranchRows.push(globalIndex);
-        }
-      });
+      // Calculate span rows (from end to start, since end is newer = lower row index)
+      // Start is inclusive, end is exclusive
+      const spanStart = Math.min(subBranch.startRow, subBranch.endRow);
+      const spanEnd = Math.max(subBranch.startRow, subBranch.endRow);
 
-      // Find minimum offset that doesn't collide with existing sub-branches
+      // Find minimum offset that doesn't collide with existing sub-branches in the span
       let offset = 1;
       let hasCollision = true;
 
       while (hasCollision) {
         hasCollision = false;
-        for (const row of subBranchRows) {
+        for (let row = spanStart; row < spanEnd; row++) {
           const usedOffsets = rowOffsetUsage.get(row) || new Set();
           if (usedOffsets.has(offset)) {
             hasCollision = true;
@@ -431,8 +493,8 @@ function renderGraph() {
         }
       }
 
-      // Mark these rows as using this offset
-      for (const row of subBranchRows) {
+      // Mark all rows in the span as using this offset (end exclusive)
+      for (let row = spanStart; row < spanEnd; row++) {
         if (!rowOffsetUsage.has(row)) {
           rowOffsetUsage.set(row, new Set());
         }
@@ -959,6 +1021,54 @@ async function reloadCommits() {
   hideLoading();
 }
 
+async function refresh() {
+  const refreshBtn = document.getElementById('refresh-btn');
+  refreshBtn.classList.add('refreshing');
+
+  try {
+    const limit = getCommitLimit();
+
+    showLoading('Fetching from remotes...');
+    await window.gitopo.git.exec('fetch --all');
+
+    showLoading('Loading commits...');
+    allCommits = await fetchCommits(limit);
+
+    showLoading('Loading branches...');
+    allBranches = await fetchBranches();
+
+    showLoading('Loading pull requests...');
+    allPullRequests = await fetchPullRequests();
+
+    // Rebuild hash -> commit map
+    hashToCommit.clear();
+    allCommits.forEach((c) => hashToCommit.set(c.hash, c));
+
+    // Re-populate branch selectors (preserve current selections)
+    const currentSelections = ['branch1', 'branch2', 'branch3'].map((id) => {
+      return document.getElementById(id).value;
+    });
+
+    populateBranchSelectors(allBranches);
+
+    // Restore selections
+    ['branch1', 'branch2', 'branch3'].forEach((id, index) => {
+      const select = document.getElementById(id);
+      if (currentSelections[index] && allBranches.some((b) => b.name === currentSelections[index])) {
+        select.value = currentSelections[index];
+      }
+    });
+
+    console.log('Refreshed - Commits:', allCommits.length, 'Branches:', allBranches.length, 'PRs:', allPullRequests.length);
+
+    showLoading('Rendering graph...');
+    renderGraph();
+    hideLoading();
+  } finally {
+    refreshBtn.classList.remove('refreshing');
+  }
+}
+
 async function init() {
   const limit = getCommitLimit();
 
@@ -1015,6 +1125,17 @@ async function init() {
       commitLimitInput.value = 1000; // Reset to default
     }
     reloadCommits();
+  });
+
+  // Refresh button handler
+  document.getElementById('refresh-btn').addEventListener('click', refresh);
+
+  // Keyboard shortcut: Ctrl+R / Cmd+R for refresh
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+      event.preventDefault();
+      refresh();
+    }
   });
 }
 
