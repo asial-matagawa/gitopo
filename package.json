@@ -1,6 +1,6 @@
 {
   "name": "gitopo",
-  "version": "0.0.3",
+  "version": "0.0.4-dev",
   "description": "Topology-preserving Git commit graph visualizer to highlight key branches.",
   "bin": {
     "gitopo": "./bin/gitopo.js"
