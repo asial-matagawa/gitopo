@@ -250,6 +250,24 @@ body {
   border-color: #4fc3f7;
 }
 
+.settings-option.checkbox {
+  padding: 8px 14px;
+}
+
+.settings-option.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-option.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #4fc3f7;
+}
+
 #graph {
   flex: 1;
   width: 100%;

@@ -11,6 +11,7 @@ let timeZoom = 1; // Time axis zoom factor
 let config = {}; // Config from package.json
 let mergeCommitStyle = 'hollow-square'; // 'circle', 'filled-square', 'hollow-square'
 let mergeEdgeStyle = 'dashed'; // 'dashed', 'solid'
+let showPRs = true; // Show pull requests on graph
 
 function showLoading(message) {
   const loading = document.getElementById('loading');
@@ -889,14 +890,16 @@ function renderGraph() {
     });
 
   // Draw PR highlight circle (behind the main node)
-  nodes
-    .filter((d) => hashToPR.has(d.hash))
-    .append('circle')
-    .attr('r', nodeRadius + 6)
-    .attr('fill', 'none')
-    .attr('stroke', '#888')
-    .attr('stroke-width', 2)
-    .attr('stroke-dasharray', '3,2');
+  if (showPRs) {
+    nodes
+      .filter((d) => hashToPR.has(d.hash))
+      .append('circle')
+      .attr('r', nodeRadius + 6)
+      .attr('fill', 'none')
+      .attr('stroke', '#888')
+      .attr('stroke-width', 2)
+      .attr('stroke-dasharray', '3,2');
+  }
 
   // Helper to check if commit is a merge commit
   function isMergeCommit(d) {
@@ -986,7 +989,7 @@ function renderGraph() {
     .on('mouseenter', (event, d) => {
       const branchNames = hashToBranches.get(d.hash) || [];
       const tagNames = hashToTags.get(d.hash) || [];
-      const pr = hashToPR.get(d.hash);
+      const pr = showPRs ? hashToPR.get(d.hash) : null;
       const prInfo = pr ? `<span class="pr-info">PR #${pr.number}: ${pr.title}</span><br/>` : '';
       const date = new Date(d.timestamp * 1000).toLocaleString();
 
@@ -1041,17 +1044,19 @@ function renderGraph() {
     });
 
   // Draw PR labels next to nodes
-  nodes
-    .filter((d) => hashToPR.has(d.hash))
-    .append('text')
-    .attr('x', nodeRadius + 10)
-    .attr('y', 4)
-    .attr('fill', '#ccc')
-    .attr('font-size', '11px')
-    .text((d) => {
-      const pr = hashToPR.get(d.hash);
-      return `PR #${pr.number}: ${pr.title.substring(0, 30)}${pr.title.length > 30 ? '...' : ''}`;
-    });
+  if (showPRs) {
+    nodes
+      .filter((d) => hashToPR.has(d.hash))
+      .append('text')
+      .attr('x', nodeRadius + 10)
+      .attr('y', 4)
+      .attr('fill', '#ccc')
+      .attr('font-size', '11px')
+      .text((d) => {
+        const pr = hashToPR.get(d.hash);
+        return `PR #${pr.number}: ${pr.title.substring(0, 30)}${pr.title.length > 30 ? '...' : ''}`;
+      });
+  }
 
   // Pan and zoom behavior
   let panX = 0;
@@ -1372,6 +1377,14 @@ async function init() {
   mergeEdgeStyleSelect.value = mergeEdgeStyle;
   mergeEdgeStyleSelect.addEventListener('change', () => {
     mergeEdgeStyle = mergeEdgeStyleSelect.value;
+    renderGraph();
+  });
+
+  // Show PRs checkbox
+  const showPRsCheckbox = document.getElementById('show-prs');
+  showPRsCheckbox.checked = showPRs;
+  showPRsCheckbox.addEventListener('change', () => {
+    showPRs = showPRsCheckbox.checked;
     renderGraph();
   });
 }
