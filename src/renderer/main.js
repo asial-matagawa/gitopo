@@ -9,6 +9,7 @@ let repoName = '';
 let timeZoom = 1; // Time axis zoom factor
 let config = {}; // Config from package.json
 let mergeCommitStyle = 'hollow-square'; // 'circle', 'filled-square', 'hollow-square'
+let mergeEdgeStyle = 'dashed'; // 'dashed', 'solid'
 
 function showLoading(message) {
   const loading = document.getElementById('loading');
@@ -669,10 +670,11 @@ function renderGraph() {
     const childPos = positions.get(commit.hash);
     if (!childPos) return;
 
-    commit.parents.forEach((parentHash) => {
+    commit.parents.forEach((parentHash, parentIndex) => {
       const parentPos = positions.get(parentHash);
       if (parentPos) {
         const isOtherEdge = childPos.col === branchLineages.length || parentPos.col === branchLineages.length;
+        const isMergeEdge = parentIndex > 0; // Second parent or later (merge edge)
 
         const x1 = childPos.x;
         const y1 = childPos.y * timeZoom;
@@ -719,7 +721,7 @@ function renderGraph() {
           .attr('stroke', edgeColor)
           .attr('stroke-width', strokeWidth)
           .attr('stroke-opacity', isOtherEdge ? 0.4 : (isSubBranchEdge ? 0.5 : 0.8))
-          .attr('stroke-dasharray', isOtherEdge ? '4,4' : 'none')
+          .attr('stroke-dasharray', isOtherEdge ? '4,4' : (isMergeEdge && mergeEdgeStyle === 'dashed' ? '4,4' : 'none'))
           .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge')
           .attr('data-source', commit.hash)
           .attr('data-target', parentHash);
@@ -1212,6 +1214,14 @@ async function init() {
   mergeCommitStyleSelect.value = mergeCommitStyle;
   mergeCommitStyleSelect.addEventListener('change', () => {
     mergeCommitStyle = mergeCommitStyleSelect.value;
+    renderGraph();
+  });
+
+  // Merge edge style dropdown
+  const mergeEdgeStyleSelect = document.getElementById('merge-edge-style');
+  mergeEdgeStyleSelect.value = mergeEdgeStyle;
+  mergeEdgeStyleSelect.addEventListener('change', () => {
+    mergeEdgeStyle = mergeEdgeStyleSelect.value;
     renderGraph();
   });
 }
