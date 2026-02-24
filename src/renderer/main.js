@@ -559,6 +559,21 @@ function renderGraph() {
     (col) => col.mainCol === branchLineages.length
   );
 
+  // Collect sub-branch bounds for drawing rectangles
+  const subBranchBounds = new Map(); // subBranchId -> { x, minY, maxY }
+  allCommits.forEach((commit) => {
+    const pos = positions.get(commit.hash);
+    if (pos && pos.isSubBranch && pos.subBranchId) {
+      if (!subBranchBounds.has(pos.subBranchId)) {
+        subBranchBounds.set(pos.subBranchId, { x: pos.x, minY: pos.y, maxY: pos.y });
+      } else {
+        const bounds = subBranchBounds.get(pos.subBranchId);
+        bounds.minY = Math.min(bounds.minY, pos.y);
+        bounds.maxY = Math.max(bounds.maxY, pos.y);
+      }
+    }
+  });
+
   // Create main group for zoom/pan
   const mainGroup = svg.append('g').attr('class', 'main-group');
 
@@ -601,6 +616,40 @@ function renderGraph() {
       .attr('font-size', '14px')
       .text('Other');
   }
+
+  // Draw sub-branch background rectangles
+  const subBranchRectPadding = 8;
+  subBranchBounds.forEach((bounds, subBranchId) => {
+    mainGroup
+      .append('rect')
+      .attr('class', `sub-branch-bg sub-branch-bg-${subBranchId}`)
+      .attr('x', bounds.x - subBranchRectPadding)
+      .attr('y', bounds.minY * timeZoom - subBranchRectPadding)
+      .attr('width', subBranchRectPadding * 2)
+      .attr('height', (bounds.maxY - bounds.minY) * timeZoom + subBranchRectPadding * 2)
+      .attr('rx', 6)
+      .attr('ry', 6)
+      .attr('fill', 'rgba(255, 255, 255, 0.08)')
+      .style('cursor', 'pointer')
+      .on('mouseenter', () => {
+        // Highlight this sub-branch rectangle
+        mainGroup.select(`.sub-branch-bg-${subBranchId}`)
+          .attr('fill', 'rgba(255, 255, 255, 0.15)');
+        // Highlight edges
+        mainGroup.selectAll(`.edge-${subBranchId}`)
+          .attr('stroke-width', 3)
+          .attr('stroke-opacity', 0.9);
+      })
+      .on('mouseleave', () => {
+        // Reset rectangle
+        mainGroup.select(`.sub-branch-bg-${subBranchId}`)
+          .attr('fill', 'rgba(255, 255, 255, 0.08)');
+        // Reset edges
+        mainGroup.selectAll(`.edge-${subBranchId}`)
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', 0.5);
+      });
+  });
 
   // Build child links map (parent -> children)
   const hashToChildren = new Map();
@@ -714,7 +763,7 @@ function renderGraph() {
           strokeWidth = 1.5;
         }
 
-        const path = mainGroup
+        mainGroup
           .append('path')
           .attr('d', pathD)
           .attr('fill', 'none')
@@ -724,24 +773,8 @@ function renderGraph() {
           .attr('stroke-dasharray', isOtherEdge ? '4,4' : (isMergeEdge && mergeEdgeStyle === 'dashed' ? '4,4' : 'none'))
           .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge')
           .attr('data-source', commit.hash)
-          .attr('data-target', parentHash);
-
-        // Add hover interaction for sub-branch edges (thicken only, no color change)
-        if (edgeSubBranchId) {
-          const originalWidth = strokeWidth;
-          path
-            .style('cursor', 'pointer')
-            .on('mouseenter', () => {
-              mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
-                .attr('stroke-width', 3)
-                .attr('stroke-opacity', 0.9);
-            })
-            .on('mouseleave', () => {
-              mainGroup.selectAll(`.edge-${edgeSubBranchId}`)
-                .attr('stroke-width', originalWidth)
-                .attr('stroke-opacity', 0.5);
-            });
-        }
+          .attr('data-target', parentHash)
+          .style('pointer-events', 'none');
       }
     });
   });
@@ -965,6 +998,13 @@ function renderGraph() {
         const midY = (y1 + y2) / 2;
         return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
       }
+    });
+
+    // Update sub-branch background rectangles
+    subBranchBounds.forEach((bounds, subBranchId) => {
+      mainGroup.select(`.sub-branch-bg-${subBranchId}`)
+        .attr('y', getZoomedY(bounds.minY) - subBranchRectPadding)
+        .attr('height', (bounds.maxY - bounds.minY) * timeZoom + subBranchRectPadding * 2);
     });
   }
 
