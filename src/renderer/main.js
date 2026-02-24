@@ -8,6 +8,7 @@ let hashToCommit = new Map();
 let repoName = '';
 let timeZoom = 1; // Time axis zoom factor
 let config = {}; // Config from package.json
+let mergeCommitStyle = 'hollow-square'; // 'circle', 'filled-square', 'hollow-square'
 
 function showLoading(message) {
   const loading = document.getElementById('loading');
@@ -771,34 +772,86 @@ function renderGraph() {
     .attr('stroke-width', 2)
     .attr('stroke-dasharray', '3,2');
 
-  nodes
-    .append('circle')
-    .attr('r', (d) => {
-      const pos = positions.get(d.hash);
-      if (pos.isSubBranch) return nodeRadius * 0.6;
-      if (pos.col < branchLineages.length) return nodeRadius;
-      return nodeRadius * 0.7;
-    })
-    .attr('fill', (d) => {
-      const pos = positions.get(d.hash);
-      if (pos.col < branchLineages.length) {
-        return branchColors[pos.col] || '#fff';
+  // Helper to check if commit is a merge commit
+  function isMergeCommit(d) {
+    return d.parents && d.parents.length > 1;
+  }
+
+  // Helper to get node size
+  function getNodeSize(d) {
+    const pos = positions.get(d.hash);
+    if (pos.isSubBranch) return nodeRadius * 0.6;
+    if (pos.col < branchLineages.length) return nodeRadius;
+    return nodeRadius * 0.7;
+  }
+
+  // Helper to get node fill color
+  function getNodeFill(d) {
+    const pos = positions.get(d.hash);
+    if (pos.col < branchLineages.length) {
+      return branchColors[pos.col] || '#fff';
+    }
+    if (pos.isSubBranch) return '#a0a0a0';
+    return '#888';
+  }
+
+  // Helper to get node stroke color
+  function getNodeStroke(d) {
+    const pos = positions.get(d.hash);
+    if (pos.col < branchLineages.length) {
+      return branchColors[pos.col] || '#333';
+    }
+    return '#333';
+  }
+
+  // Helper to get node stroke width
+  function getNodeStrokeWidth(d) {
+    const pos = positions.get(d.hash);
+    if (pos.isSubBranch) return 1;
+    return pos.col < branchLineages.length ? 2 : 1;
+  }
+
+  // Append node shapes (circle for normal, rect for merge commits based on style)
+  nodes.each(function(d) {
+    const node = d3.select(this);
+    const size = getNodeSize(d);
+
+    if (isMergeCommit(d) && mergeCommitStyle !== 'circle') {
+      if (mergeCommitStyle === 'hollow-square') {
+        // Draw hollow square for merge commits (background fill + stroke)
+        node.append('rect')
+          .attr('class', 'node-shape')
+          .attr('x', -size)
+          .attr('y', -size)
+          .attr('width', size * 2)
+          .attr('height', size * 2)
+          .attr('fill', '#1a1a2e')
+          .attr('stroke', getNodeStroke(d))
+          .attr('stroke-width', getNodeStrokeWidth(d) + 1);
+      } else {
+        // Draw filled square for merge commits
+        node.append('rect')
+          .attr('class', 'node-shape')
+          .attr('x', -size)
+          .attr('y', -size)
+          .attr('width', size * 2)
+          .attr('height', size * 2)
+          .attr('fill', getNodeFill(d))
+          .attr('stroke', getNodeStroke(d))
+          .attr('stroke-width', getNodeStrokeWidth(d));
       }
-      if (pos.isSubBranch) return '#a0a0a0';
-      return '#888';
-    })
-    .attr('stroke', (d) => {
-      const pos = positions.get(d.hash);
-      if (pos.col < branchLineages.length) {
-        return branchColors[pos.col] || '#333';
-      }
-      return '#333';
-    })
-    .attr('stroke-width', (d) => {
-      const pos = positions.get(d.hash);
-      if (pos.isSubBranch) return 1;
-      return pos.col < branchLineages.length ? 2 : 1;
-    })
+    } else {
+      // Draw circle for normal commits
+      node.append('circle')
+        .attr('class', 'node-shape')
+        .attr('r', size)
+        .attr('fill', getNodeFill(d))
+        .attr('stroke', getNodeStroke(d))
+        .attr('stroke-width', getNodeStrokeWidth(d));
+    }
+  });
+
+  nodes.selectAll('.node-shape')
     .style('cursor', 'pointer')
     .on('mouseenter', (event, d) => {
       const branchNames = hashToBranches.get(d.hash);
@@ -1136,6 +1189,30 @@ async function init() {
       event.preventDefault();
       refresh();
     }
+  });
+
+  // Settings menu toggle
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsMenu = document.getElementById('settings-menu');
+
+  settingsBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    settingsMenu.classList.toggle('hidden');
+  });
+
+  // Close settings menu when clicking outside
+  document.addEventListener('click', (event) => {
+    if (!settingsMenu.contains(event.target) && event.target !== settingsBtn) {
+      settingsMenu.classList.add('hidden');
+    }
+  });
+
+  // Merge commit style dropdown
+  const mergeCommitStyleSelect = document.getElementById('merge-commit-style');
+  mergeCommitStyleSelect.value = mergeCommitStyle;
+  mergeCommitStyleSelect.addEventListener('change', () => {
+    mergeCommitStyle = mergeCommitStyleSelect.value;
+    renderGraph();
   });
 }
 
