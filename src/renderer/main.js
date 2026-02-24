@@ -3,6 +3,7 @@ import './style.css';
 
 let allCommits = [];
 let allBranches = [];
+let allTags = [];
 let allPullRequests = [];
 let hashToCommit = new Map();
 let repoName = '';
@@ -76,7 +77,7 @@ function getCommitLimit() {
 
 async function fetchCommits(limit = 1000) {
   const result = await window.gitopo.git.exec(
-    `log --exclude=refs/stash --all --format="%H|%P|%ct|%s" --date-order -${limit}`
+    `log --exclude=refs/stash --all --format="%H|%P|%ct|%an|%s" --date-order -${limit}`
   );
 
   if (!result.success) {
@@ -89,13 +90,14 @@ async function fetchCommits(limit = 1000) {
 
   for (const line of lines) {
     const parts = line.split('|');
-    if (parts.length >= 4) {
+    if (parts.length >= 5) {
       const hash = parts[0];
       const parentsStr = parts[1];
       const timestamp = parseInt(parts[2], 10);
-      const message = parts.slice(3).join('|');
+      const author = parts[3];
+      const message = parts.slice(4).join('|');
       const parents = parentsStr.trim() ? parentsStr.trim().split(' ') : [];
-      commits.push({ hash, parents, timestamp, message });
+      commits.push({ hash, parents, timestamp, author, message });
     }
   }
 
@@ -126,6 +128,32 @@ async function fetchBranches() {
   }
 
   return branches;
+}
+
+async function fetchTags() {
+  const result = await window.gitopo.git.exec(
+    'tag --format="%(refname:short) %(objectname)"'
+  );
+
+  if (!result.success) {
+    console.error('Failed to fetch tags:', result.error);
+    return [];
+  }
+
+  const tags = [];
+  const lines = result.output.trim().split('\n');
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const parts = line.trim().split(' ');
+    if (parts.length >= 2) {
+      const name = parts[0];
+      const hash = parts[1];
+      tags.push({ name, hash });
+    }
+  }
+
+  return tags;
 }
 
 function populateBranchSelectors(branches) {
@@ -450,6 +478,15 @@ function renderGraph() {
       hashToBranches.set(b.hash, []);
     }
     hashToBranches.get(b.hash).push(b.name);
+  });
+
+  // Build hash -> tag map
+  const hashToTags = new Map();
+  allTags.forEach((t) => {
+    if (!hashToTags.has(t.hash)) {
+      hashToTags.set(t.hash, []);
+    }
+    hashToTags.get(t.hash).push(t.name);
   });
 
   // Assign commits to columns with sub-column offsets
@@ -940,20 +977,33 @@ function renderGraph() {
     }
   });
 
+  // SVG icons for branches and tags (inline, small)
+  const branchIcon = '<svg class="ref-icon" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/></svg>';
+  const tagIcon = '<svg class="ref-icon" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>';
+
   nodes.selectAll('.node-shape')
     .style('cursor', 'pointer')
     .on('mouseenter', (event, d) => {
-      const branchNames = hashToBranches.get(d.hash);
-      const branchInfo = branchNames ? `[${branchNames.join(', ')}]<br/>` : '';
+      const branchNames = hashToBranches.get(d.hash) || [];
+      const tagNames = hashToTags.get(d.hash) || [];
       const pr = hashToPR.get(d.hash);
       const prInfo = pr ? `<span class="pr-info">PR #${pr.number}: ${pr.title}</span><br/>` : '';
       const date = new Date(d.timestamp * 1000).toLocaleString();
 
+      // Build refs line (branches and tags as small labels)
+      let refsHtml = '';
+      if (branchNames.length > 0 || tagNames.length > 0) {
+        const branchLabels = branchNames.map(name => `<span class="ref-label ref-branch">${branchIcon}${name}</span>`).join('');
+        const tagLabels = tagNames.map(name => `<span class="ref-label ref-tag">${tagIcon}${name}</span>`).join('');
+        refsHtml = `<div class="refs-line">${branchLabels}${tagLabels}</div>`;
+      }
+
       tooltip
         .html(
           `<strong>${d.hash.substring(0, 7)}</strong><br/>` +
-            `${prInfo}${branchInfo}${d.message}<br/>` +
-            `<span class="date">${date}</span>`
+            `${prInfo}${d.message}<br/>` +
+            `<span class="date">${date}</span> <span class="author">${d.author}</span>` +
+            refsHtml
         )
         .style('left', event.pageX + 15 + 'px')
         .style('top', event.pageY - 10 + 'px')
@@ -1186,6 +1236,9 @@ async function refresh() {
     showLoading('Loading branches...');
     allBranches = await fetchBranches();
 
+    showLoading('Loading tags...');
+    allTags = await fetchTags();
+
     showLoading('Loading pull requests...');
     allPullRequests = await fetchPullRequests();
 
@@ -1238,6 +1291,9 @@ async function init() {
 
   showLoading('Loading branches...');
   allBranches = await fetchBranches();
+
+  showLoading('Loading tags...');
+  allTags = await fetchTags();
 
   showLoading('Loading pull requests...');
   allPullRequests = await fetchPullRequests();

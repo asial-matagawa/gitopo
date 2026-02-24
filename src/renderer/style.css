@@ -280,7 +280,41 @@ body {
   font-size: 11px;
 }
 
+.tooltip .author {
+  color: #aaa;
+  font-size: 11px;
+}
+
 .tooltip .pr-info {
   color: #81C784;
   font-weight: bold;
+}
+
+.tooltip .refs-line {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tooltip .ref-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tooltip .ref-branch {
+  color: #81c784;
+}
+
+.tooltip .ref-tag {
+  color: #ffb74d;
+}
+
+.tooltip .ref-icon {
+  flex-shrink: 0;
 }
