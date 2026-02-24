@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Settings menu (gear icon in top right corner)
+- Merge commit display style options (Circle, Filled square, Hollow square)
+- Merge edge style options (Dashed, Solid) for second parent edges
+- Sub-branch background rectangles to visually group commits
+- Hover highlighting for sub-branch commits and rectangles
+- Tag display in commit tooltip with tag icon
+- Author display in commit tooltip after date
+- Pull request display toggle in settings (default: ON)
+- Lineage-based sub-branch detection: branches originating from a key branch (directly or indirectly) belong to that key branch's lineage
+
+### Changed
+
+- Sub-branches now allow merges from other key branches
+- Sub-branch ownership determined by branch point (first commit's parent), not merge destination
+- Edges from key branches into sub-branches now use the source key branch's color
+- Tooltip now shows branches and tags below the date line with icons
+- Sub-branches with merges from unknown branches are split into separate sub-branches
+- Commits from the same parent are now placed in separate sub-branches (first-parent chain only)
+
+### Fixed
+
+- Sub-branch overlap detection now uses actual commit positions instead of branch point/merge commit only
+- Stash refs excluded from commit graph
+- Commits with the same parent are now correctly placed in separate sub-branches
+
+### Removed
+
+- Edge hover highlighting
+
 ## [0.0.3] - 2026-02-20
 
 ### Added
