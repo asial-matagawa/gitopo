@@ -520,42 +520,40 @@ function renderGraph() {
     // Track which rows have which sub-offsets used
     const rowOffsetUsage = new Map(); // row -> Set of used offsets
 
-    // Calculate span for each sub-branch
+    // Calculate span for each sub-branch based on actual commit rows
     const subBranchesWithSpan = branch.subBranches.map((subBranch) => {
-      // Find start row (branch point on mainline)
-      let startRow = -1;
-      if (subBranch.branchPoint) {
-        startRow = allCommits.findIndex((c) => c.hash === subBranch.branchPoint);
-      }
-      // Fallback: use oldest commit in sub-branch
-      if (startRow < 0) {
-        let oldestTimestamp = -Infinity;
-        subBranch.commits.forEach((hash) => {
-          const commit = hashToCommit.get(hash);
-          if (commit && commit.timestamp > oldestTimestamp) {
-            oldestTimestamp = commit.timestamp;
-            startRow = allCommits.findIndex((c) => c.hash === hash);
-          }
-        });
-      }
+      // Find the row range of actual commits in this sub-branch
+      let minRow = Infinity;
+      let maxRow = -Infinity;
+      subBranch.commits.forEach((hash) => {
+        const row = allCommits.findIndex((c) => c.hash === hash);
+        if (row >= 0) {
+          minRow = Math.min(minRow, row);
+          maxRow = Math.max(maxRow, row);
+        }
+      });
 
-      // Find end row (merge commit on mainline, or newest commit in sub-branch if unmerged)
-      let endRow = -1;
+      // Include merge commit row if exists (it's on mainline but visually connects)
       if (subBranch.mergeCommit) {
-        endRow = allCommits.findIndex((c) => c.hash === subBranch.mergeCommit);
-      } else {
-        // Unmerged: use newest commit (highest timestamp = lowest row index)
-        let newestTimestamp = Infinity;
-        subBranch.commits.forEach((hash) => {
-          const commit = hashToCommit.get(hash);
-          if (commit && commit.timestamp < newestTimestamp) {
-            newestTimestamp = commit.timestamp;
-            endRow = allCommits.findIndex((c) => c.hash === hash);
-          }
-        });
+        const mergeRow = allCommits.findIndex((c) => c.hash === subBranch.mergeCommit);
+        if (mergeRow >= 0) {
+          minRow = Math.min(minRow, mergeRow);
+        }
       }
 
-      return { ...subBranch, startRow, endRow };
+      // Include branch point row if exists (it's on mainline but visually connects)
+      if (subBranch.branchPoint) {
+        const branchPointRow = allCommits.findIndex((c) => c.hash === subBranch.branchPoint);
+        if (branchPointRow >= 0) {
+          maxRow = Math.max(maxRow, branchPointRow);
+        }
+      }
+
+      // Fallback if no valid rows found
+      if (minRow === Infinity) minRow = 0;
+      if (maxRow === -Infinity) maxRow = 0;
+
+      return { ...subBranch, startRow: maxRow, endRow: minRow };
     });
 
     // Sort sub-branches by their branch point timestamp (older first = higher row index first)
