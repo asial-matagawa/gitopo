@@ -269,6 +269,22 @@ body {
   accent-color: #4fc3f7;
 }
 
+.settings-option button {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+  background: #1a1a2e;
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.settings-option button:hover {
+  border-color: #4fc3f7;
+  color: #4fc3f7;
+}
+
 #graph {
   flex: 1;
   width: 100%;

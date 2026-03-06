@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Draggable sub-branches setting (default: OFF): when enabled, sub-branch rectangles and their commits can be dragged horizontally to adjust layout
+- Reset button in settings to restore all sub-branch positions to their defaults
+
 ## [0.0.6] - 2026-03-06
 
 ### Added

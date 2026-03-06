@@ -13,6 +13,8 @@ let mergeCommitStyle = 'hollow-square'; // 'circle', 'filled-square', 'hollow-sq
 let mergeEdgeStyle = 'dashed'; // 'dashed', 'solid'
 let showPRs = true; // Show pull requests on graph
 let useAbsoluteTimeAxis = false; // Use real timestamps for Y positions
+const subBranchXDeltas = new Map(); // stableKey -> manual x offset in pixels
+let enableSubBranchDrag = false; // Enable sub-branch drag to reposition
 
 function showLoading(message) {
   const loading = document.getElementById('loading');
@@ -579,6 +581,11 @@ function renderGraph() {
 
     sortedSubBranches.forEach((subBranch) => {
       const subBranchId = `sb-${subBranchIdCounter++}`;
+      // Stable key that persists across re-renders (used to preserve xDelta)
+      // Use sorted first commit hash to guarantee uniqueness across sub-branches
+      // (mergeCommit/branchPoint alone can be shared by multiple sub-branches)
+      const firstCommit = [...subBranch.commits].sort()[0];
+      const stableKey = `${subBranch.mergeCommit || subBranch.branchPoint || ''}:${firstCommit}`;
 
       // Calculate span rows (from end to start, since end is newer = lower row index)
       // Start is inclusive, end is exclusive
@@ -616,6 +623,7 @@ function renderGraph() {
           subOffset: offset,
           isSubBranch: true,
           subBranchId: subBranchId,
+          stableKey: stableKey,
         });
       });
     });
@@ -664,6 +672,7 @@ function renderGraph() {
       y: y,
       isSubBranch: col.isSubBranch,
       subBranchId: col.subBranchId || null,
+      stableKey: col.stableKey || null,
     });
   });
 
@@ -678,7 +687,7 @@ function renderGraph() {
     const pos = positions.get(commit.hash);
     if (pos && pos.isSubBranch && pos.subBranchId) {
       if (!subBranchBounds.has(pos.subBranchId)) {
-        subBranchBounds.set(pos.subBranchId, { x: pos.x, minY: pos.y, maxY: pos.y });
+        subBranchBounds.set(pos.subBranchId, { x: pos.x, minY: pos.y, maxY: pos.y, stableKey: pos.stableKey });
       } else {
         const bounds = subBranchBounds.get(pos.subBranchId);
         bounds.minY = Math.min(bounds.minY, pos.y);
@@ -736,14 +745,26 @@ function renderGraph() {
     mainGroup
       .append('rect')
       .attr('class', `sub-branch-bg sub-branch-bg-${subBranchId}`)
-      .attr('x', bounds.x - subBranchRectPadding)
+      .attr('x', bounds.x + (subBranchXDeltas.get(bounds.stableKey) || 0) - subBranchRectPadding)
       .attr('y', bounds.minY * timeZoom - subBranchRectPadding)
       .attr('width', subBranchRectPadding * 2)
       .attr('height', (bounds.maxY - bounds.minY) * timeZoom + subBranchRectPadding * 2)
       .attr('rx', 6)
       .attr('ry', 6)
       .attr('fill', 'rgba(255, 255, 255, 0.08)')
-      .style('cursor', 'pointer')
+      .style('cursor', enableSubBranchDrag ? 'grab' : 'pointer')
+      .on('mousedown', (event) => {
+        if (!enableSubBranchDrag || event.button !== 0) return;
+        event.stopPropagation();
+        subBranchDrag = {
+          subBranchId,
+          stableKey: bounds.stableKey,
+          startMouseX: event.clientX,
+          startDelta: subBranchXDeltas.get(bounds.stableKey) || 0,
+          panXAtStart: panX,
+        };
+        event.preventDefault();
+      })
       .on('mouseenter', () => {
         // Highlight this sub-branch rectangle
         mainGroup.select(`.sub-branch-bg-${subBranchId}`)
@@ -838,9 +859,9 @@ function renderGraph() {
         const isOtherEdge = childPos.col === branchLineages.length || parentPos.col === branchLineages.length;
         const isMergeEdge = parentIndex > 0; // Second parent or later (merge edge)
 
-        const x1 = childPos.x;
+        const x1 = getRenderedX(childPos);
         const y1 = childPos.y * timeZoom;
-        const x2 = parentPos.x;
+        const x2 = getRenderedX(parentPos);
         const y2 = parentPos.y * timeZoom;
 
         let pathD;
@@ -853,8 +874,12 @@ function renderGraph() {
           pathD = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
         }
 
-        // Determine sub-branch ID for this edge
-        const edgeSubBranchId = childPos.subBranchId || parentPos.subBranchId || null;
+        // Determine sub-branch classes for this edge (may belong to two sub-branches)
+        let edgeClasses = 'edge';
+        if (childPos.subBranchId) edgeClasses += ` edge-${childPos.subBranchId}`;
+        if (parentPos.subBranchId && parentPos.subBranchId !== childPos.subBranchId) {
+          edgeClasses += ` edge-${parentPos.subBranchId}`;
+        }
         const isSubBranchEdge = childPos.isSubBranch || parentPos.isSubBranch;
         const isMainlineEdge = !isSubBranchEdge && !isOtherEdge && childPos.col < branchLineages.length;
 
@@ -903,7 +928,7 @@ function renderGraph() {
           .attr('stroke-width', strokeWidth)
           .attr('stroke-opacity', isOtherEdge ? 0.4 : (isSubBranchEdge ? 0.5 : 0.8))
           .attr('stroke-dasharray', isOtherEdge ? '4,4' : (isMergeEdge && mergeEdgeStyle === 'dashed' ? '4,4' : 'none'))
-          .attr('class', edgeSubBranchId ? `edge edge-${edgeSubBranchId}` : 'edge')
+          .attr('class', edgeClasses)
           .attr('data-source', commit.hash)
           .attr('data-target', parentHash)
           .style('pointer-events', 'none');
@@ -926,7 +951,7 @@ function renderGraph() {
     .attr('class', 'node')
     .attr('transform', (d) => {
       const pos = positions.get(d.hash);
-      return pos ? `translate(${pos.x}, ${pos.y * timeZoom})` : 'translate(-100, -100)';
+      return pos ? `translate(${getRenderedX(pos)}, ${pos.y * timeZoom})` : 'translate(-100, -100)';
     });
 
   // Draw PR highlight circle (behind the main node)
@@ -1025,7 +1050,25 @@ function renderGraph() {
   const tagIcon = '<svg class="ref-icon" viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>';
 
   nodes.selectAll('.node-shape')
-    .style('cursor', 'pointer')
+    .style('cursor', (d) => {
+      const pos = positions.get(d.hash);
+      return (enableSubBranchDrag && pos && pos.isSubBranch) ? 'grab' : 'pointer';
+    })
+    .on('mousedown', (event, d) => {
+      if (!enableSubBranchDrag || event.button !== 0) return;
+      const pos = positions.get(d.hash);
+      if (pos && pos.isSubBranch && pos.stableKey) {
+        event.stopPropagation();
+        subBranchDrag = {
+          subBranchId: pos.subBranchId,
+          stableKey: pos.stableKey,
+          startMouseX: event.clientX,
+          startDelta: subBranchXDeltas.get(pos.stableKey) || 0,
+          panXAtStart: panX,
+        };
+        event.preventDefault();
+      }
+    })
     .on('mouseenter', (event, d) => {
       const branchNames = hashToBranches.get(d.hash) || [];
       const tagNames = hashToTags.get(d.hash) || [];
@@ -1125,10 +1168,25 @@ function renderGraph() {
   let dragStartY = 0;
   let panStartX = 0;
   let panStartY = 0;
+  let subBranchDrag = null; // { subBranchId, stableKey, startMouseX, startDelta }
 
   // Helper to get zoomed Y position
   function getZoomedY(baseY) {
     return baseY * timeZoom;
+  }
+
+  // Helper to get rendered X position (applies manual xDelta for sub-branches)
+  function getRenderedX(pos) {
+    if (pos.isSubBranch && pos.stableKey) {
+      return pos.x + (subBranchXDeltas.get(pos.stableKey) || 0);
+    }
+    return pos.x;
+  }
+
+  // Update all elements after a sub-branch xDelta change.
+  // Uses updatePositions() to keep all nodes, edges, and rects fully consistent.
+  function updateSubBranchXPosition() {
+    updatePositions();
   }
 
   function updateTransform() {
@@ -1143,22 +1201,20 @@ function renderGraph() {
     // Update node positions
     mainGroup.selectAll('g.node').attr('transform', (d) => {
       const pos = positions.get(d.hash);
-      return pos ? `translate(${pos.x}, ${getZoomedY(pos.y)})` : 'translate(-100, -100)';
+      return pos ? `translate(${getRenderedX(pos)}, ${getZoomedY(pos.y)})` : 'translate(-100, -100)';
     });
 
     // Update edge paths
     mainGroup.selectAll('path.edge').attr('d', function () {
       const edge = d3.select(this);
-      const sourceHash = edge.attr('data-source');
-      const targetHash = edge.attr('data-target');
-      const sourcePos = positions.get(sourceHash);
-      const targetPos = positions.get(targetHash);
+      const sourcePos = positions.get(edge.attr('data-source'));
+      const targetPos = positions.get(edge.attr('data-target'));
 
       if (!sourcePos || !targetPos) return '';
 
-      const x1 = sourcePos.x;
+      const x1 = getRenderedX(sourcePos);
       const y1 = getZoomedY(sourcePos.y);
-      const x2 = targetPos.x;
+      const x2 = getRenderedX(targetPos);
       const y2 = getZoomedY(targetPos.y);
 
       if (x1 === x2) {
@@ -1172,6 +1228,7 @@ function renderGraph() {
     // Update sub-branch background rectangles
     subBranchBounds.forEach((bounds, subBranchId) => {
       mainGroup.select(`.sub-branch-bg-${subBranchId}`)
+        .attr('x', bounds.x + (subBranchXDeltas.get(bounds.stableKey) || 0) - subBranchRectPadding)
         .attr('y', getZoomedY(bounds.minY) - subBranchRectPadding)
         .attr('height', (bounds.maxY - bounds.minY) * timeZoom + subBranchRectPadding * 2);
     });
@@ -1218,7 +1275,13 @@ function renderGraph() {
   });
 
   svg.on('mousemove', (event) => {
-    if (isDragging) {
+    if (subBranchDrag) {
+      // Compute delta in graph coordinates (subtract panX drift since drag start)
+      const dx = (event.clientX - subBranchDrag.startMouseX) - (panX - subBranchDrag.panXAtStart);
+      subBranchXDeltas.set(subBranchDrag.stableKey, subBranchDrag.startDelta + dx);
+      updateSubBranchXPosition();
+      svg.style('cursor', 'grabbing');
+    } else if (isDragging) {
       panX = panStartX + (event.clientX - dragStartX);
       panY = panStartY + (event.clientY - dragStartY);
       updateTransform();
@@ -1227,12 +1290,16 @@ function renderGraph() {
 
   svg.on('mouseup', (event) => {
     if (event.button === 0) {
+      subBranchDrag = null;
       isDragging = false;
+      svg.style('cursor', null);
     }
   });
 
   svg.on('mouseleave', () => {
+    subBranchDrag = null;
     isDragging = false;
+    svg.style('cursor', null);
   });
 
   // Touch scrolling
@@ -1457,6 +1524,20 @@ async function init() {
   useAbsoluteTimeAxisCheckbox.addEventListener('change', () => {
     useAbsoluteTimeAxis = useAbsoluteTimeAxisCheckbox.checked;
     timeZoom = computeOptimalTimeZoom();
+    renderGraph();
+  });
+
+  // Sub-branch drag checkbox
+  const enableSubBranchDragCheckbox = document.getElementById('enable-sub-branch-drag');
+  enableSubBranchDragCheckbox.checked = enableSubBranchDrag;
+  enableSubBranchDragCheckbox.addEventListener('change', () => {
+    enableSubBranchDrag = enableSubBranchDragCheckbox.checked;
+    renderGraph();
+  });
+
+  // Reset sub-branch positions button
+  document.getElementById('reset-sub-branch-positions').addEventListener('click', () => {
+    subBranchXDeltas.clear();
     renderGraph();
   });
 }
