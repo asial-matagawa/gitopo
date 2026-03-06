@@ -836,11 +836,30 @@ function renderGraph() {
         const isMainlineEdge = !isSubBranchEdge && !isOtherEdge && childPos.col < branchLineages.length;
 
         // Determine edge color based on branch
+        // For merge edges (second parent), use parent's key branch color if parent is on a key branch mainline
         let edgeColor = '#666';
-        if (isOtherEdge) {
-          edgeColor = '#444';
-        } else if (childPos.col < branchLineages.length) {
-          edgeColor = branchColors[childPos.col] || '#666';
+        let mergeEdgeColorSet = false;
+        if (isMergeEdge) {
+          // Check if parent is directly in a key branch lineage
+          for (let i = 0; i < branchLineages.length; i++) {
+            if (branchLineages[i].lineage.has(parentHash)) {
+              edgeColor = branchColors[i] || '#666';
+              mergeEdgeColorSet = true;
+              break;
+            }
+          }
+          // If parent is a sub-branch commit of a key branch, use that key branch's color
+          if (!mergeEdgeColorSet && parentPos.col < branchLineages.length) {
+            edgeColor = branchColors[parentPos.col] || '#666';
+            mergeEdgeColorSet = true;
+          }
+        }
+        if (!mergeEdgeColorSet) {
+          if (isOtherEdge) {
+            edgeColor = '#444';
+          } else if (childPos.col < branchLineages.length) {
+            edgeColor = branchColors[childPos.col] || '#666';
+          }
         }
 
         // Determine stroke width
