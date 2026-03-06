@@ -1052,8 +1052,16 @@ function renderGraph() {
         .style('top', event.pageY - 10 + 'px')
         .style('opacity', 1);
 
-      // Highlight connecting edges for Other column commits (not in sub-branches)
       const pos = positions.get(d.hash);
+      // Re-apply sub-branch highlight (the rect's mouseleave fires when the node is entered)
+      if (pos && pos.isSubBranch && pos.subBranchId) {
+        mainGroup.select(`.sub-branch-bg-${pos.subBranchId}`)
+          .attr('fill', 'rgba(255, 255, 255, 0.15)');
+        mainGroup.selectAll(`.edge-${pos.subBranchId}`)
+          .attr('stroke-width', 3)
+          .attr('stroke-opacity', 0.9);
+      }
+      // Highlight connecting edges for Other column commits (not in sub-branches)
       if (pos && pos.col === branchLineages.length && !pos.isSubBranch) {
         const connectingEdges = findConnectingEdges(d.hash);
         connectingEdges.forEach(({ source, target }) => {
@@ -1071,8 +1079,16 @@ function renderGraph() {
     .on('mouseleave', (event, d) => {
       tooltip.style('opacity', 0);
 
-      // Reset edge highlighting for Other column commits
       const pos = positions.get(d.hash);
+      // Reset sub-branch highlight (rect's mouseleave already fired on node-enter, won't re-fire)
+      if (pos && pos.isSubBranch && pos.subBranchId) {
+        mainGroup.select(`.sub-branch-bg-${pos.subBranchId}`)
+          .attr('fill', 'rgba(255, 255, 255, 0.08)');
+        mainGroup.selectAll(`.edge-${pos.subBranchId}`)
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', 0.5);
+      }
+      // Reset edge highlighting for Other column commits
       if (pos && pos.col === branchLineages.length && !pos.isSubBranch) {
         const connectingEdges = findConnectingEdges(d.hash);
         connectingEdges.forEach(({ source, target }) => {
