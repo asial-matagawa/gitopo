@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Absolute time axis setting (default: OFF): when enabled, commits are positioned vertically based on their real timestamps; the optimal zoom level is automatically calculated at load time to fit the first ~100 commits into the viewport
+- Removed upper and lower zoom limits to allow unrestricted time axis zooming
+
 ### Fixed
 
 - Merge edge color now correctly reflects the source branch when the merged commit is a sub-branch commit (previously showed the destination key branch color instead)
+- Sub-branch edge highlight is now preserved when hovering a commit node inside the sub-branch rectangle
 
 ## [0.0.5] - 2026-02-26
 

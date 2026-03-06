@@ -12,6 +12,7 @@ let config = {}; // Config from package.json
 let mergeCommitStyle = 'hollow-square'; // 'circle', 'filled-square', 'hollow-square'
 let mergeEdgeStyle = 'dashed'; // 'dashed', 'solid'
 let showPRs = true; // Show pull requests on graph
+let useAbsoluteTimeAxis = false; // Use real timestamps for Y positions
 
 function showLoading(message) {
   const loading = document.getElementById('loading');
@@ -196,6 +197,21 @@ function populateBranchSelectors(branches) {
 
     select.addEventListener('change', () => renderGraph());
   });
+}
+
+// Compute optimal timeZoom for absolute time axis mode.
+// Fits the first ~100 commits into the current viewport height.
+function computeOptimalTimeZoom() {
+  if (!useAbsoluteTimeAxis || allCommits.length < 2) return 1;
+
+  const visibleCount = Math.min(100, allCommits.length);
+  const timeSpan = allCommits[0].timestamp - allCommits[visibleCount - 1].timestamp;
+
+  if (timeSpan === 0) return 1; // All commits share the same timestamp
+
+  const paddingTop = 50;
+  const availableHeight = window.innerHeight - paddingTop * 2;
+  return availableHeight / timeSpan;
 }
 
 function getFirstParentLineage(branchName) {
@@ -628,17 +644,24 @@ function renderGraph() {
   // Calculate positions
   const positions = new Map();
 
+  // In absolute time axis mode, Y is based on real timestamps (1px per second base,
+  // scaled by timeZoom). The newest commit (allCommits[0]) is at the top.
+  const maxTimestamp = allCommits.length > 0 ? allCommits[0].timestamp : 0;
+
   allCommits.forEach((commit, globalIndex) => {
     const col = commitColumn.get(commit.hash);
     const baseX = columnStartX.get(col.mainCol);
     const x = baseX + col.subOffset * subBranchOffset;
+    const y = useAbsoluteTimeAxis
+      ? paddingTop + (maxTimestamp - commit.timestamp)
+      : paddingTop + globalIndex * nodeSpacingY;
 
     positions.set(commit.hash, {
       col: col.mainCol,
       subOffset: col.subOffset,
       row: globalIndex,
       x: x,
-      y: paddingTop + globalIndex * nodeSpacingY,
+      y: y,
       isSubBranch: col.isSubBranch,
       subBranchId: col.subBranchId || null,
     });
@@ -1076,8 +1099,11 @@ function renderGraph() {
   }
 
   // Pan and zoom behavior
+  // In absolute time axis mode, offset panY so the newest commit appears near the top.
+  // The newest commit has pos.y = paddingTop, rendered at paddingTop * timeZoom.
+  // We subtract the excess so it lands at paddingTop in SVG coordinates.
   let panX = 0;
-  let panY = 0;
+  let panY = useAbsoluteTimeAxis ? paddingTop * (1 - timeZoom) : 0;
   let isDragging = false;
   let dragStartX = 0;
   let dragStartY = 0;
@@ -1094,6 +1120,7 @@ function renderGraph() {
     // Header follows horizontal pan only
     headerGroup.attr('transform', `translate(${panX}, 0)`);
   }
+  updateTransform(); // Apply initial pan position
 
   // Update node and edge positions based on timeZoom
   function updatePositions() {
@@ -1141,10 +1168,7 @@ function renderGraph() {
     if (event.ctrlKey || event.metaKey) {
       // Ctrl/Cmd + scroll: vertical zoom (time axis)
       const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
-      const minZoom = 0.1;
-      const maxZoom = 5;
-
-      const newTimeZoom = Math.max(minZoom, Math.min(maxZoom, timeZoom * zoomFactor));
+      const newTimeZoom = timeZoom * zoomFactor;
 
       // Zoom centered on mouse Y position
       const rect = svg.node().getBoundingClientRect();
@@ -1237,6 +1261,8 @@ async function reloadCommits() {
 
   console.log('Commits reloaded:', allCommits.length);
 
+  if (useAbsoluteTimeAxis) timeZoom = computeOptimalTimeZoom();
+
   showLoading('Rendering graph...');
   renderGraph();
   hideLoading();
@@ -1284,6 +1310,8 @@ async function refresh() {
     });
 
     console.log('Refreshed - Commits:', allCommits.length, 'Branches:', allBranches.length, 'PRs:', allPullRequests.length);
+
+    if (useAbsoluteTimeAxis) timeZoom = computeOptimalTimeZoom();
 
     showLoading('Rendering graph...');
     renderGraph();
@@ -1334,6 +1362,8 @@ async function init() {
   console.log('Config:', config);
 
   populateBranchSelectors(allBranches);
+
+  if (useAbsoluteTimeAxis) timeZoom = computeOptimalTimeZoom();
 
   showLoading('Rendering graph...');
   renderGraph();
@@ -1402,6 +1432,15 @@ async function init() {
   showPRsCheckbox.checked = showPRs;
   showPRsCheckbox.addEventListener('change', () => {
     showPRs = showPRsCheckbox.checked;
+    renderGraph();
+  });
+
+  // Absolute time axis checkbox
+  const useAbsoluteTimeAxisCheckbox = document.getElementById('use-absolute-time-axis');
+  useAbsoluteTimeAxisCheckbox.checked = useAbsoluteTimeAxis;
+  useAbsoluteTimeAxisCheckbox.addEventListener('change', () => {
+    useAbsoluteTimeAxis = useAbsoluteTimeAxisCheckbox.checked;
+    timeZoom = computeOptimalTimeZoom();
     renderGraph();
   });
 }
